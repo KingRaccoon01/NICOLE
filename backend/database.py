@@ -3,6 +3,7 @@ Nicole — Veritabanı katmanı
 SQLite + SQLAlchemy 2.0 (async). Tek dosyalık, kuruluma gerek duymayan yerel DB.
 """
 import enum
+import json
 import datetime as dt
 import logging
 import shutil
@@ -68,7 +69,13 @@ class Paragraph(Base):
     chapter_id: Mapped[int] = mapped_column(ForeignKey("chapters.id"))
     text: Mapped[str] = mapped_column(Text)  # ham metin (flag'li terimler dahil orijinal haliyle)
     order: Mapped[int] = mapped_column(Integer, default=0)
+    # Whisper'ın emin olmadığı kelimeler (JSON liste). Metin elle/Editör'le değişince boşaltılır.
+    uncertain_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=_now)
+
+    @property
+    def uncertain_words(self) -> list[str]:
+        return json.loads(self.uncertain_json or "[]")
 
     chapter: Mapped["Chapter"] = relationship(back_populates="paragraphs")
     flags: Mapped[list["FlaggedTerm"]] = relationship(back_populates="paragraph", cascade="all, delete-orphan")
@@ -230,10 +237,19 @@ async def migrate_lore_per_project(conn, db_file: Path | None = None) -> bool:
     return changed
 
 
+async def add_missing_columns(conn) -> None:
+    """create_all mevcut tablolara yeni sütun eklemez; eski veritabanlarına burada eklenir (veri silinmez)."""
+    cols = {c[1] for c in (await conn.execute(text("PRAGMA table_info(paragraphs)"))).fetchall()}
+    if cols and "uncertain_json" not in cols:
+        await conn.execute(text("ALTER TABLE paragraphs ADD COLUMN uncertain_json TEXT"))
+        logger.warning("paragraphs tablosuna uncertain_json sütunu eklendi.")
+
+
 async def init_db() -> None:
     async with engine.begin() as conn:
         await migrate_lore_per_project(conn, _sqlite_file_from_url(config.DATABASE_URL))
         await conn.run_sync(Base.metadata.create_all)
+        await add_missing_columns(conn)
 
     # Teşhis: her açılışta romanların sözlük boyutunu terminale yaz ("lore kayboldu mu?" sorusu için).
     async with engine.connect() as conn:

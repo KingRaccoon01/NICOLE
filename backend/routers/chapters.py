@@ -94,6 +94,7 @@ async def update_paragraph(paragraph_id: int, payload: ParagraphCreate, session:
         raise HTTPException(404, "Paragraf bulunamadı")
 
     paragraph.text = payload.text
+    paragraph.uncertain_json = None  # elle yazılan metin Whisper'dan gelmiyor
 
     old_flags_result = await session.execute(select(FlaggedTerm).where(FlaggedTerm.paragraph_id == paragraph_id))
     for old_flag in old_flags_result.scalars().all():

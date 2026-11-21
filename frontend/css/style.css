@@ -202,6 +202,7 @@ body.keyboard-mode .paragraph-block:hover .paragraph-delete-btn {
 .flag-badge:hover { background: rgba(229,72,77,0.22); }
 
 .resolved-term { border-radius: 4px; padding: 0 3px; cursor: pointer; }
+.uncertain-word { text-decoration: underline dotted rgba(229,180,72,0.7); text-underline-offset: 3px; }
 .resolved-term.blue  { background: rgba(76,159,212,0.15); color: var(--azure); }
 .resolved-term.green { background: rgba(62,207,142,0.15); color: var(--jade); }
 .resolved-term.yellow{ background: rgba(212,162,76,0.15); color: var(--gold); }

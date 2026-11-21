@@ -168,6 +168,8 @@ async def _save_paragraph_and_scan(
                 offset = len(candidate.text) + 1  # +1: metinler arasına eklenen boşluk
                 context = candidate.text
                 candidate.text = f"{candidate.text} {text}"
+                merged = candidate.uncertain_words + [w for w in uncertain_words or [] if w not in candidate.uncertain_words]
+                candidate.uncertain_json = json.dumps(merged, ensure_ascii=False)
                 await touch_project(session, chapter_id)
                 await session.commit()
                 await session.refresh(candidate)
@@ -178,7 +180,10 @@ async def _save_paragraph_and_scan(
         if paragraph is None:
             order = await next_order(session, Paragraph, Paragraph.chapter_id == chapter_id)
             context = await _previous_text(session, chapter_id, order)
-            paragraph = Paragraph(chapter_id=chapter_id, text=text, order=order)
+            paragraph = Paragraph(
+                chapter_id=chapter_id, text=text, order=order,
+                uncertain_json=json.dumps(uncertain_words or [], ensure_ascii=False),
+            )
             session.add(paragraph)
             await touch_project(session, chapter_id)
             await session.commit()
@@ -191,6 +196,10 @@ async def _save_paragraph_and_scan(
         # yeniden işaretlenmesin. search_text/offset de aynı nedenle "text"
         # üzerinde arama yapıp gerçek pozisyonu (offset ile) hesaplar.
         detected = await detect_flags(text, known_terms, uncertain_words=uncertain_words, context=context)
+        warning = None
+        if detected is None:  # Ollama'ya ulaşılamadı — sessizce "flag yok" gibi görünmesin
+            warning = "Ollama'ya ulaşılamadı — bu metinde flag taraması YAPILMADI (Ollama açık mı?)"
+            detected = []
         await create_flags_for_paragraph(session, paragraph, detected, search_text=text, offset=offset)
         await session.refresh(paragraph, attribute_names=["flags"])
 
@@ -200,6 +209,8 @@ async def _save_paragraph_and_scan(
             "text": paragraph.text,
             "order": paragraph.order,
             "is_append": is_append,
+            "uncertain_words": paragraph.uncertain_words,
+            "warning": warning,
             "flags": [
                 {
                     "id": f.id,

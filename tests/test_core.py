@@ -104,3 +104,47 @@ def test_uncertain_words_from_whisper_segments():
     segs = [SimpleNamespace(words=[W(" Küçük", 0.95), W(" bir", 0.99), W(" falız,", 0.31)]),
             SimpleNamespace(words=[W(" falız", 0.2), W(" yeşermişti.", 0.9)]), SimpleNamespace(words=None)]
     assert uncertain_words(segs) == ["falız"]
+
+
+def test_uncertain_words_saved_and_cleared_and_ollama_warning(monkeypatch):
+    from backend.routers import dictation_ws
+
+    async def ollama_down(*_a, **_kw):
+        return None
+
+    monkeypatch.setattr(dictation_ws, "detect_flags", ollama_down)
+    _, cid = _project()
+    data = asyncio.run(dictation_ws._save_paragraph_and_scan(cid, "Küçük bir falız", uncertain_words=["falız"]))
+    assert data["uncertain_words"] == ["falız"]
+    assert "Ollama" in data["warning"]  # tarama yapılmadığı kullanıcıya söyleniyor
+
+    data = asyncio.run(dictation_ws._save_paragraph_and_scan(cid, "yeşermişti", append_to=data["id"], uncertain_words=["yeşermişti"]))
+    assert data["uncertain_words"] == ["falız", "yeşermişti"]
+
+    edited = client.put(f"/api/paragraphs/{data['id']}", json={"text": "Küçük bir filiz yeşermişti"}).json()
+    assert edited["uncertain_words"] == []  # elle düzeltilen metinde eski işaretler kalmaz
+
+
+def test_old_database_gets_new_column():
+    import sqlite3
+    from sqlalchemy.ext.asyncio import create_async_engine
+    from backend.database import add_missing_columns
+
+    path = os.path.join(tempfile.mkdtemp(), "eski.db")
+    raw = sqlite3.connect(path)
+    raw.execute("CREATE TABLE paragraphs (id INTEGER PRIMARY KEY, chapter_id INT, text TEXT, \"order\" INT, created_at DATETIME)")
+    raw.execute("INSERT INTO paragraphs (chapter_id, text, \"order\") VALUES (1, 'eski metin', 0)")
+    raw.commit()
+    raw.close()
+
+    async def run():
+        eng = create_async_engine(f"sqlite+aiosqlite:///{path}")
+        async with eng.begin() as conn:
+            await add_missing_columns(conn)
+            await add_missing_columns(conn)  # ikinci kez çalışınca hata vermemeli
+        await eng.dispose()
+
+    asyncio.run(run())
+    raw = sqlite3.connect(path)
+    assert raw.execute("SELECT text, uncertain_json FROM paragraphs").fetchall() == [("eski metin", None)]
+    raw.close()

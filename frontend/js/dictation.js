@@ -141,7 +141,8 @@ function connectDictationSocket(chapterId) {
     if (msg.type === "paragraph") {
       renderParagraph(msg.data);
       updateStats();
-      setIdleStatus();
+      if (msg.data.warning) setRecordStatus(`⚠ ${msg.data.warning}`, true);
+      else setIdleStatus();
       // Bir sonraki "kayıt durdur" da (kullanıcı "Yeni Paragraf" demediği
       // sürece) bu paragrafın devamı olarak eklensin.
       Dictation.currentParagraphId = msg.data.id;

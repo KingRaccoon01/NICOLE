@@ -119,6 +119,7 @@ async def _apply_edits(session: AsyncSession, project_id: int, message_id: int, 
             for f in flags:
                 await session.delete(f)
             para.text = new_text
+            para.uncertain_json = None
 
         elif action == "insert_after":
             await session.execute(

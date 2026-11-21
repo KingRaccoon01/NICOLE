@@ -66,6 +66,7 @@ class ParagraphOut(BaseModel):
     text: str
     order: int
     flags: list[FlaggedTermOut] = []
+    uncertain_words: list[str] = []
 
 
 class ParagraphCreate(BaseModel):

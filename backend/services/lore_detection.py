@@ -164,7 +164,7 @@ async def detect_flags(
     context: str | None = None,
 ) -> list[dict]:
     """
-    Dönüş: [{"term": "falız", "suggestion": "filiz"}, ...]
+    Dönüş: [{"term": "falız", "suggestion": "filiz"}, ...] — Ollama'ya ulaşılamazsa None.
     uncertain_words: Whisper'ın düşük eminlikle yazdığı kelimeler (stt_service.uncertain_words).
     context: aynı bölümün önceki metni — "en mantıklı kelime" ancak bağlamla bulunur.
     Ollama'ya erişilemezse (kurulu değilse) boş liste döner ve hata loglanır —
@@ -218,7 +218,7 @@ async def detect_flags(
             "Ollama'ya ulaşılamadı, flag tespiti atlanıyor (%s): %s [url=%s]",
             type(exc).__name__, exc or "(mesaj yok)", f"{config.OLLAMA_BASE_URL}/api/generate",
         )
-        return []
+        return None
 
     raw = data.get("response", "{}")
 

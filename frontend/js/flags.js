@@ -49,8 +49,9 @@ function buildParagraphHtml(paragraph) {
   let cursor = 0;
   let markerIndex = 0;
 
+  const plain = (s) => markUncertain(s, paragraph.uncertain_words || []);
   for (const flag of flags) {
-    html += escapeHtml(text.slice(cursor, flag.position_start));
+    html += plain(text.slice(cursor, flag.position_start));
 
     if (flag.status === "pending") {
       html += `<span class="flag-badge" data-flag-id="${flag.id}">🚩</span>`; // numara updateStats'ta verilir
@@ -62,10 +63,25 @@ function buildParagraphHtml(paragraph) {
     cursor = flag.position_end;
     markerIndex++;
   }
-  html += escapeHtml(text.slice(cursor));
+  html += plain(text.slice(cursor));
 
   const marker = flags.length ? `<span class="para-marker">${flags.length}</span> ` : "";
   return marker + html;
+}
+
+// Whisper'ın emin olmadığı kelimelerin altını soluk çizer (sadece bilgi; tıklanmaz).
+function markUncertain(str, words) {
+  if (!words.length) return escapeHtml(str);
+  const esc = (w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const re = new RegExp(`(?<![\\p{L}\\p{N}])(${words.map(esc).join("|")})(?![\\p{L}\\p{N}])`, "giu");
+  let out = "";
+  let last = 0;
+  for (const m of str.matchAll(re)) {
+    out += escapeHtml(str.slice(last, m.index));
+    out += `<span class="uncertain-word" title="Whisper bu kelimeden emin değildi">${escapeHtml(m[0])}</span>`;
+    last = m.index + m[0].length;
+  }
+  return out + escapeHtml(str.slice(last));
 }
 
 function attachFlagClickHandlers(block, paragraph) {
