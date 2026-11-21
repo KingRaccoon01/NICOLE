@@ -10,6 +10,7 @@ Görev: Whisper'ın yazıya döktüğü paragrafta yazarın kontrol etmesi gerek
      duyulmuş hali ise o terimin doğru yazımı, değilse terimin kendisi (yazar onaylar).
 """
 from __future__ import annotations
+import difflib
 import json
 import logging
 import os
@@ -77,6 +78,25 @@ def _word_is_common(word: str) -> bool:
     return False
 
 
+def align_to_text(term: str, text: str) -> str:
+    """
+    Model terimi bazen metindekinden farklı yazar ("falızların" yerine "faliz") ve o zaman metinde
+    bulunamayıp flag hiç oluşmaz. Metinde aynen yoksa, metindeki en benzer kelimeye eşlenir.
+    """
+    if re.search(rf"(?<!\w){re.escape(term)}(?!\w)", text, flags=re.IGNORECASE):
+        return term
+    t = tr_lower(term)
+
+    def score(word: str) -> float:
+        w = tr_lower(word)
+        # ikinci ölçü kelimenin kökünü (ilk len(t) harf) karşılaştırır: "faliz" ~ "falız|ların"
+        return max(difflib.SequenceMatcher(None, t, w).ratio(), difflib.SequenceMatcher(None, t, w[: len(t)]).ratio())
+
+    words = re.findall(r"\w+(?:['’]\w+)?", text)
+    best = max(words, key=score, default=None)
+    return best if best is not None and score(best) >= 0.7 else term
+
+
 def is_common_term(term: str) -> bool:
     """Terimi oluşturan TÜM kelimeler yaygın Türkçe kelimeyse True (örn. 'selam', 'nasılsınız')."""
     words = [w for w in re.split(r"[\s\-]+", term) if w]
@@ -104,11 +124,13 @@ def filter_flags(flags: list, known_terms: list[str], uncertain_words: list[str]
         key = tr_lower(term)
         if key in known_lower or key in seen:
             continue
-        if key not in uncertain_lower and is_common_term(term):
-            continue
         suggestion = str(f.get("suggestion") or "").strip()
         if tr_lower(suggestion) == key:
             suggestion = ""  # öneri terimin aynısıysa "öneriyi kabul et" anlamsız; "orijinali kabul et" yeter
+        # Yaygın kelime: sadece Whisper emin değilse VE model gerçekten farklı bir kelime öneriyorsa kalır
+        # (yoksa model sıradan "mektup" gibi kelimeleri öneri vermeden işaretleyebiliyor).
+        if is_common_term(term) and not (key in uncertain_lower and suggestion):
+            continue
         seen.add(key)
         result.append({"term": term, "suggestion": suggestion})
     return result
@@ -121,6 +143,7 @@ bazı kelimeleri yanlış duyabiliyor. Görevin paragrafta yazarın kontrol etme
 İKİ TÜR KELİME ARA:
 1) YANLIŞ DUYULMUŞ KELİME: cümlede anlamsız duran, bağlama uymayan ya da Türkçede olmayan kelime.
    "suggestion" = cümlenin anlamına göre yazarın büyük ihtimalle söylediği kelime (aynı ekleriyle).
+   Öneri HER ZAMAN TÜRKÇE olmalı — asla İngilizce çeviri yazma.
 2) YENİ KURGUSAL AD: karakter, yer, teknik, büyü, eşya adı gibi uydurma özel adlar.
    LORE SÖZLÜĞÜ'ndeki bir terime benziyorsa (yanlış duyulmuş hali) "suggestion" = o terimin doğru
    yazımı. Benzemiyorsa "suggestion" = terimin kendisi.
@@ -167,14 +190,21 @@ async def detect_flags(
     Dönüş: [{"term": "falız", "suggestion": "filiz"}, ...] — Ollama'ya ulaşılamazsa None.
     uncertain_words: Whisper'ın düşük eminlikle yazdığı kelimeler (stt_service.uncertain_words).
     context: aynı bölümün önceki metni — "en mantıklı kelime" ancak bağlamla bulunur.
-    Ollama'ya erişilemezse (kurulu değilse) boş liste döner ve hata loglanır —
-    uygulamanın geri kalanı çalışmaya devam eder.
 
     Lore terimleri modele "doğru yazımlar" olarak verilir (yanlış duyulmuş bir terime doğru
     yazımı önerebilsin diye). "Zaten sözlükte mi" elemesi yine Python tarafında, filter_flags
     içinde yapılır — küçük modeller bu karşılaştırmada tutarsız kalabiliyor.
     """
     user_prompt = _build_user_prompt(paragraph_text, known_terms, uncertain_words or [], context)
+
+    if config.FLAG_ENGINE == "gemini" and config.GEMINI_API_KEY:
+        from . import gemini_service  # döngüsel import olmasın diye burada
+        try:
+            raw = await gemini_service.generate_json(_SYSTEM_PROMPT, user_prompt, config.FLAG_GEMINI_MODEL)
+            logger.info("Flag taraması Gemini (%s) ile yapıldı.", config.FLAG_GEMINI_MODEL)
+            return _parse_and_filter(raw, paragraph_text, known_terms, uncertain_words)
+        except Exception as exc:
+            logger.warning("Gemini flag taraması başarısız (%s: %s) — Ollama ile taranıyor.", type(exc).__name__, exc)
 
     payload = {
         "model": config.OLLAMA_MODEL,
@@ -220,14 +250,18 @@ async def detect_flags(
         )
         return None
 
-    raw = data.get("response", "{}")
+    return _parse_and_filter(data.get("response", "{}"), paragraph_text, known_terms, uncertain_words)
+
+
+def _parse_and_filter(raw: str, paragraph_text: str, known_terms: list[str], uncertain_words: list[str] | None) -> list[dict]:
+    """Modelin JSON cevabını ayrıştırır, terimleri metne hizalar ve süzer (Ollama ve Gemini ortak)."""
 
     # TEŞHİS AMAÇLI: gönderilen bilinen terimler ve Ollama'nın ham yanıtını
     # terminale yazdır — "neden flag olmadı" sorusunu VSCode terminalinden
     # kendi başına cevaplayabilmen için (özellikle "rasengan zaten known_terms
     # listesinde mi" ya da "model boş flags mi döndürdü" ayrımını görürsün).
     logger.info(
-        "Ollama flag taraması — ham yanıt: %s | emin olunmayan kelimeler: %s | bilinen terim sayısı: %d",
+        "Flag taraması — ham yanıt: %s | emin olunmayan kelimeler: %s | bilinen terim sayısı: %d",
         raw[:300],
         uncertain_words or "(yok)",
         len(known_terms),
@@ -239,9 +273,12 @@ async def detect_flags(
         if not isinstance(flags, list):
             flags = []
     except json.JSONDecodeError:
-        logger.warning("Ollama JSON döndürmedi, ham çıktı (ilk 500 karakter): %s", raw[:500])
+        logger.warning("Model JSON döndürmedi, ham çıktı (ilk 500 karakter): %s", raw[:500])
         return []
 
+    for f in flags:
+        if isinstance(f, dict) and f.get("term"):
+            f["term"] = align_to_text(str(f["term"]).strip(), paragraph_text)
     # Aday listesini süz: Lore Sözlüğü'ndekiler, tekrarlar ve yaygın Türkçe kelimeler elenir.
     result = filter_flags(flags, known_terms, uncertain_words)
     if len(result) != len(flags):

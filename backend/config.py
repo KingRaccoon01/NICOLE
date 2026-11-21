@@ -49,7 +49,15 @@ WHISPER_VOCABULARY_HINT = os.getenv("WHISPER_VOCABULARY_HINT", "")
 # sadece IPv4 (127.0.0.1) üzerinde dinler; bu uyumsuzluk "bağlantı reddedildi"
 # hatasına yol açabiliyordu.
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2:3b")  # denemelerde 8B llama3 öneriyi İngilizce verebiliyordu
+
+# --- Flag taraması motoru ---
+# "ollama" (varsayılan): yerel, internetsiz, kota yok.
+# "gemini": Türkçeyi ve bağlamı çok daha iyi anlar. Editör sohbetinin kotasını yememesi için AYRI
+# bir model kullanır (Google'da her modelin ücretsiz kotası ayrı sayılır). Gemini hata verirse
+# (kota bitti, internet yok) o paragraf otomatik olarak Ollama ile taranır.
+FLAG_ENGINE = os.getenv("FLAG_ENGINE", "ollama").strip().lower()
+FLAG_GEMINI_MODEL = os.getenv("FLAG_GEMINI_MODEL", "gemini-flash-lite-latest")
 
 # --- Gemini (AI Editör Sohbeti) ---
 # Ücretsiz katman: https://aistudio.google.com/apikey adresinden anahtar alınır.

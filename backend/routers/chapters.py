@@ -4,7 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from ..database import get_session, Chapter, Paragraph, FlaggedTerm, next_order, touch_project
+from ..database import get_session, Project, Chapter, Paragraph, FlaggedTerm, next_order, touch_project
 from ..schemas import ChapterCreate, ChapterOut, ParagraphOut, ParagraphCreate
 
 router = APIRouter(prefix="/api", tags=["chapters"])
@@ -12,9 +12,22 @@ router = APIRouter(prefix="/api", tags=["chapters"])
 
 @router.post("/projects/{project_id}/chapters", response_model=ChapterOut)
 async def create_chapter(project_id: int, payload: ChapterCreate, session: AsyncSession = Depends(get_session)):
+    if await session.get(Project, project_id) is None:
+        raise HTTPException(404, "Proje bulunamadı")
     order = await next_order(session, Chapter, Chapter.project_id == project_id)
     chapter = Chapter(project_id=project_id, title=payload.title, order=order)
     session.add(chapter)
+    await session.commit()
+    await session.refresh(chapter)
+    return chapter
+
+
+@router.put("/chapters/{chapter_id}", response_model=ChapterOut)
+async def rename_chapter(chapter_id: int, payload: ChapterCreate, session: AsyncSession = Depends(get_session)):
+    chapter = await session.get(Chapter, chapter_id)
+    if not chapter:
+        raise HTTPException(404, "Bölüm bulunamadı")
+    chapter.title = payload.title.strip() or chapter.title
     await session.commit()
     await session.refresh(chapter)
     return chapter

@@ -177,6 +177,18 @@ async def _generate_with_fallback(body: dict) -> tuple[dict | None, str | None, 
             break
     return None, None, errors
 
+async def generate_json(system_text: str, user_text: str, model: str) -> str:
+    """Tek seferlik JSON üretimi (flag taraması için). Hata olursa exception fırlatır; çağıran karar verir."""
+    body = {
+        "contents": [{"role": "user", "parts": [{"text": user_text}]}],
+        "systemInstruction": {"parts": [{"text": system_text}]},
+        "generationConfig": {"responseMimeType": "application/json", "maxOutputTokens": 2048},
+    }
+    data = await _post_with_retry(_model_url(model), body, attempts=2)
+    parts = data["candidates"][0]["content"]["parts"]
+    return "".join(p.get("text", "") for p in parts if not p.get("thought"))
+
+
 def _fit_context(story_context: str) -> str:
     """Çok uzun hikâyede BAŞ kısmı atar, EN SON kısmı (en güncel yazılanları) korur."""
     if len(story_context) <= MAX_CONTEXT_CHARS:

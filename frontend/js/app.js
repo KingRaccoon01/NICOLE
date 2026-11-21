@@ -10,6 +10,13 @@ async function initApp() {
   const project = await apiGet(`/projects/${NicoleState.projectId}`);
   document.getElementById("chapterLabel").textContent = `DİKTE AKIŞI — ${project.title}`;
 
+  const chapters = await apiGet(`/projects/${NicoleState.projectId}/chapters`);
+  // localStorage'da başka bir romanın bölümü kalmış olabilir — bu romanın ilk bölümüne dön
+  if (!chapters.some((c) => String(c.id) === String(NicoleState.chapterId)) && chapters.length) {
+    NicoleState.chapterId = chapters[0].id;
+  }
+  fillChapterSelect(chapters);
+
   connectDictationSocket(NicoleState.chapterId);
 
   const paragraphs = await apiGet(`/chapters/${NicoleState.chapterId}/paragraphs`);
@@ -19,6 +26,42 @@ async function initApp() {
   loadChatHistory();
   loadLore();
 }
+
+// --- Bölümler ---
+const NEW_CHAPTER = "__new__";
+const RENAME_CHAPTER = "__rename__";
+
+function fillChapterSelect(chapters) {
+  const select = document.getElementById("chapterSelect");
+  select.innerHTML = "";
+  for (const c of chapters) select.add(new Option(c.title, c.id));
+  select.add(new Option("✎ Bölüm adını değiştir…", RENAME_CHAPTER));
+  select.add(new Option("＋ Yeni bölüm…", NEW_CHAPTER));
+  select.value = NicoleState.chapterId;
+  select.dataset.count = chapters.length;
+}
+
+document.getElementById("chapterSelect").addEventListener("change", async (e) => {
+  const select = e.target;
+  const choice = select.value;
+  select.value = NicoleState.chapterId; // iptal edilirse seçim eski bölümde kalsın
+
+  if (choice === NEW_CHAPTER) {
+    const title = prompt("Yeni bölümün adı:", `Bölüm ${Number(select.dataset.count) + 1}`);
+    if (!title || !title.trim()) return;
+    const chapter = await apiPost(`/projects/${NicoleState.projectId}/chapters`, { title: title.trim() });
+    NicoleState.chapterId = chapter.id;
+  } else if (choice === RENAME_CHAPTER) {
+    const current = select.selectedOptions[0]?.textContent || "";
+    const title = prompt("Bölümün yeni adı:", current);
+    if (!title || !title.trim() || title.trim() === current) return;
+    await apiPut(`/chapters/${NicoleState.chapterId}`, { title: title.trim() });
+  } else {
+    NicoleState.chapterId = choice;
+  }
+  // Dikte soketi, paragraflar ve sayaçlar bölüme bağlı — en güvenlisi sayfayı yeniden yüklemek
+  window.location.reload();
+});
 
 document.getElementById("projectsBtn").addEventListener("click", () => {
   window.location.href = "projects.html";

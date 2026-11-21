@@ -64,6 +64,20 @@ def test_lore_case_insensitive_turkish():
     assert client.post(f"/api/projects/{pid}/lore", json={"term": "ışıkkılıç"}).status_code == 400
 
 
+def test_chapters_rename_and_export_has_headings():
+    import io
+    from docx import Document
+
+    pid, c1 = _project("İki Bölümlü")
+    client.put(f"/api/chapters/{c1}", json={"title": "Başlangıç"})
+    c2 = client.post(f"/api/projects/{pid}/chapters", json={"title": "Bölüm 2"}).json()["id"]
+    client.post(f"/api/chapters/{c1}/paragraphs", json={"text": "birinci"})
+    client.post(f"/api/chapters/{c2}/paragraphs", json={"text": "ikinci"})
+    doc = Document(io.BytesIO(client.get(f"/api/projects/{pid}/export").content))
+    assert [p.text for p in doc.paragraphs] == ["İki Bölümlü", "Başlangıç", "birinci", "Bölüm 2", "ikinci"]
+    assert client.post("/api/projects/999999/chapters", json={}).status_code == 404
+
+
 def test_no_cors_for_foreign_sites():
     res = client.get("/api/projects", headers={"Origin": "https://kotu-site.example"})
     assert "access-control-allow-origin" not in res.headers
@@ -148,3 +162,35 @@ def test_old_database_gets_new_column():
     raw = sqlite3.connect(path)
     assert raw.execute("SELECT text, uncertain_json FROM paragraphs").fetchall() == [("eski metin", None)]
     raw.close()
+
+
+def test_flag_term_aligned_to_text_and_plain_common_word_dropped():
+    out = lore_detection._parse_and_filter(
+        '{"flags": [{"term": "faliz", "suggestion": "filiz"}, {"term": "mektup", "suggestion": ""}]}',
+        "Bahçede ilk falızların yeşerdiğini gördü, masada bir mektup vardı.", [], ["falızların", "mektup"],
+    )
+    # model metindeki yazımı değiştirmişti -> metindeki kelimeye eşlendi; önerisiz "mektup" elendi
+    assert out == [{"term": "falızların", "suggestion": "filiz"}]
+
+
+def test_gemini_flag_failure_falls_back_to_ollama(monkeypatch):
+    from backend import config
+    from backend.services import gemini_service
+
+    async def quota_gone(*_a, **_kw):
+        raise RuntimeError("429 kota bitti")
+
+    class FakeOllama:
+        def __init__(self, *a, **kw): pass
+        async def __aenter__(self): return self
+        async def __aexit__(self, *a): return False
+        async def post(self, *a, **kw):
+            return SimpleNamespace(raise_for_status=lambda: None,
+                                   json=lambda: {"response": '{"flags": [{"term": "çey", "suggestion": "çay"}]}'})
+
+    monkeypatch.setattr(config, "FLAG_ENGINE", "gemini")
+    monkeypatch.setattr(config, "GEMINI_API_KEY", "test")
+    monkeypatch.setattr(gemini_service, "generate_json", quota_gone)
+    monkeypatch.setattr(lore_detection.httpx, "AsyncClient", FakeOllama)
+    got = asyncio.run(lore_detection.detect_flags("Bir bardak çey içtim.", [], uncertain_words=["çey"]))
+    assert got == [{"term": "çey", "suggestion": "çay"}]

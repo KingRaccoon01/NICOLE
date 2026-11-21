@@ -29,7 +29,7 @@ async function openProject(projectId) {
   const chapters = await apiGet(`/projects/${projectId}/chapters`);
   let chapterId;
   if (chapters.length === 0) {
-    const chapter = await apiPost(`/projects/${projectId}/chapters`, { title: "Yeni Bölüm" });
+    const chapter = await apiPost(`/projects/${projectId}/chapters`, { title: "Bölüm 1" });
     chapterId = chapter.id;
   } else {
     chapterId = chapters[0].id;

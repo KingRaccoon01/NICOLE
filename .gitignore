@@ -1,13 +1,14 @@
-# Gizli ayarlar
+# Gizli ayarlar (.env.example hariç: anahtarsız şablon)
 .env
-.env.example
+.env.*
+!.env.example
 
 # Python
 venv/
 __pycache__/
 *.pyc
+.pytest_cache/
 
 # Kullanıcı verisi (romanlar)
 nicole.db
 nicole.db.bak*
-.pytest_cache/
