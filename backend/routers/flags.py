@@ -2,9 +2,10 @@
 Nicole — Flag (tutarlılık) sistemi
 Müdahale modalindeki 4 aksiyonu işler:
   accept_raw          -> 🔵 mavi  (orijinal terim aynen kalır, lore'a otomatik eklenir)
-  accept_suggestion   -> 🟢 yeşil (AI önerisi kullanılır, lore'a otomatik eklenir)
-  manual              -> 🟡 sarı  (kullanıcının yazdığı metin; lore ekleme isteğe bağlı)
+  accept_suggestion   -> 🟢 yeşil (öneri kullanılır; lore'a EKLENMEZ — yanlış duyulan kelime sözlüğe girmesin)
+  manual              -> 🟡 sarı  (kullanıcının yazdığı metin; isterse SADECE düzeltilmiş hali lore'a eklenir)
   cancel              -> 🔴 kırmızı flag olduğu gibi kalır, hiçbir şey değişmez
+  reopen              -> çözülmüş flag tekrar kırmızı olur (kararı geri al)
 """
 import datetime as dt
 
@@ -105,6 +106,13 @@ async def resolve_flag(flag_id: int, payload: FlagResolveRequest, session: Async
         # Kırmızı flag olduğu gibi kalır — hiçbir alan değişmez.
         return flag
 
+    if payload.action == "reopen":
+        # Kararı geri al. Lore'a eklenmiş terim kalır (gerekirse Lore sekmesinden silinir).
+        flag.status, flag.final_text, flag.resolved_at = FlagStatus.pending, None, None
+        await session.commit()
+        await session.refresh(flag)
+        return flag
+
     project_id = await _project_id_for_paragraph(session, flag.paragraph_id)
 
     if payload.action == "accept_raw":
@@ -117,7 +125,8 @@ async def resolve_flag(flag_id: int, payload: FlagResolveRequest, session: Async
             raise HTTPException(400, "Bu flag için bir AI önerisi yok")
         flag.status = FlagStatus.accepted_suggestion
         flag.final_text = flag.suggested_text
-        await _add_to_lore_if_missing(session, project_id, flag.raw_text, LoreSource.auto)
+        # Lore'a eklenmez: raw_text yanlış duyulmuş kelimedir ("falız"). Sözlüğe girerse hem bir daha
+        # işaretlenmez hem de Whisper'a ipucu olarak gidip aynı hatayı pekiştirirdi.
 
     elif payload.action == "manual":
         if not payload.manual_text:
@@ -125,16 +134,10 @@ async def resolve_flag(flag_id: int, payload: FlagResolveRequest, session: Async
         flag.status = FlagStatus.manual
         flag.final_text = payload.manual_text
         if payload.add_to_lore:
-            # Kullanıcının yazdığı DOĞRU terimi ekle — Lore Sözlüğü'nde görmeyi
-            # beklediği budur. Ayrıca orijinal tespit edilen hali (flag.raw_text,
-            # ör. Whisper'ın yanlış transkript ettiği bir varyant) farklıysa onu
-            # da ekliyoruz ki AYNI hatalı transkripsiyon tekrar gelirse yine
-            # flag'lenmesin. (Önceki sürümde SADECE raw_text ekleniyordu; bu da
-            # kullanıcının sözlükte kendi yazdığı kelimeyi bulamayıp "eklenmedi"
-            # sanmasına yol açıyordu.)
+            # SADECE düzeltilmiş (doğru) terim eklenir. Yanlış duyulmuş hali eklenmez: eklenirse
+            # Whisper'a ipucu olarak gidip hatayı pekiştirirdi. Aynı hata tekrar gelirse flag
+            # taraması onu sözlükteki doğru terime benzetip doğru yazımı önerir.
             await _add_to_lore_if_missing(session, project_id, payload.manual_text, LoreSource.manual)
-            if tr_lower(flag.raw_text.strip()) != tr_lower(payload.manual_text.strip()):
-                await _add_to_lore_if_missing(session, project_id, flag.raw_text, LoreSource.manual)
 
     else:
         raise HTTPException(400, f"Bilinmeyen aksiyon: {payload.action}")

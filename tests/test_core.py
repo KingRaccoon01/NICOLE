@@ -123,6 +123,57 @@ def test_client_errors_are_recorded():
     assert any("TypeError" in e["message"] for e in client.get("/api/debug/recent-errors").json())
 
 
+def test_accept_suggestion_does_not_pollute_lore_and_reopen():
+    pid, cid = _project()
+
+    async def make_flag():
+        async with AsyncSessionLocal() as s:
+            p = Paragraph(chapter_id=cid, text="küçük bir falız", order=0)
+            s.add(p)
+            await s.commit()
+            await create_flags_for_paragraph(s, p, [{"term": "falız", "suggestion": "filiz"}])
+            await s.refresh(p, attribute_names=["flags"])
+            return p.flags[0].id
+
+    fid = asyncio.run(make_flag())
+    r = client.post(f"/api/flags/{fid}/resolve", json={"action": "accept_suggestion"}).json()
+    assert r["final_text"] == "filiz"
+    assert client.get(f"/api/projects/{pid}/lore").json() == []  # "falız" sözlüğe girmedi
+    r = client.post(f"/api/flags/{fid}/resolve", json={"action": "reopen"}).json()
+    assert r["status"] == "pending" and r["final_text"] is None
+
+
+def test_delete_chapter_but_not_the_last():
+    pid, c1 = _project()
+    c2 = client.post(f"/api/projects/{pid}/chapters", json={"title": "Bölüm 2"}).json()["id"]
+    client.post(f"/api/chapters/{c2}/paragraphs", json={"text": "silinecek"})
+    assert client.delete(f"/api/chapters/{c2}").json()["next_chapter_id"] == c1
+    assert [c["id"] for c in client.get(f"/api/projects/{pid}/chapters").json()] == [c1]
+    assert client.delete(f"/api/chapters/{c1}").status_code == 400
+
+
+def test_daily_backup_keeps_last_seven():
+    import pathlib
+    import sqlite3
+    from backend.database import backup_database
+
+    root = pathlib.Path(tempfile.mkdtemp())
+    db = root / "nicole.db"
+    con = sqlite3.connect(db)
+    con.execute("CREATE TABLE t (x)")
+    con.execute("INSERT INTO t VALUES ('roman')")
+    con.commit()
+    con.close()
+    bdir = root / "yedekler"
+    bdir.mkdir()
+    for day in range(1, 10):  # eski yedekler
+        (bdir / f"nicole-2026-01-0{day}.db").write_text("eski")
+    made = backup_database(db, bdir)
+    assert sqlite3.connect(made).execute("SELECT x FROM t").fetchall() == [("roman",)]
+    kept = sorted(p.name for p in bdir.glob("nicole-*.db"))
+    assert len(kept) == 7 and made.name in kept and "nicole-2026-01-01.db" not in kept
+
+
 def test_no_cors_for_foreign_sites():
     res = client.get("/api/projects", headers={"Origin": "https://kotu-site.example"})
     assert "access-control-allow-origin" not in res.headers

@@ -199,7 +199,11 @@ function enterParagraphEditMode(block) {
 function openFlagModal(flag) {
   activeFlag = flag;
   document.getElementById("modalFlagIndex").textContent = `#${flag.id}`;
-  document.getElementById("modalTermText").textContent = `"${flag.raw_text}" — Lore Sözlüğü'nde tanımlı değil.`;
+  const resolved = flag.status !== "pending";
+  document.getElementById("modalTermText").textContent = resolved
+    ? `"${flag.raw_text}" → "${flag.final_text}" olarak çözülmüş. İstersen değiştir ya da geri al.`
+    : `"${flag.raw_text}" — kontrol et: yanlış duyulmuş olabilir ya da sözlükte olmayan bir ad.`;
+  document.getElementById("reopenCard").style.display = resolved ? "" : "none";
   document.getElementById("rawTermDesc").textContent = `"${flag.raw_text}" kelimesi olduğu gibi kalsın`;
   document.getElementById("suggestionDesc").textContent = flag.suggested_text
     ? `"${flag.suggested_text}" ile değiştir`

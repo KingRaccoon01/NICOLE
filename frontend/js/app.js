@@ -30,6 +30,7 @@ async function initApp() {
 // --- Bölümler ---
 const NEW_CHAPTER = "__new__";
 const RENAME_CHAPTER = "__rename__";
+const DELETE_CHAPTER = "__delete__";
 
 function fillChapterSelect(chapters) {
   const select = document.getElementById("chapterSelect");
@@ -37,6 +38,7 @@ function fillChapterSelect(chapters) {
   for (const c of chapters) select.add(new Option(c.title, c.id));
   select.add(new Option("✎ Bölüm adını değiştir…", RENAME_CHAPTER));
   select.add(new Option("＋ Yeni bölüm…", NEW_CHAPTER));
+  if (chapters.length > 1) select.add(new Option("🗑 Bu bölümü sil…", DELETE_CHAPTER));
   select.value = NicoleState.chapterId;
   select.dataset.count = chapters.length;
 }
@@ -56,6 +58,12 @@ document.getElementById("chapterSelect").addEventListener("change", async (e) =>
     const title = prompt("Bölümün yeni adı:", current);
     if (!title || !title.trim() || title.trim() === current) return;
     await apiPut(`/chapters/${NicoleState.chapterId}`, { title: title.trim() });
+  } else if (choice === DELETE_CHAPTER) {
+    const name = [...select.options].find((o) => o.value === String(NicoleState.chapterId))?.textContent || "";
+    const count = document.querySelectorAll(".paragraph-block").length;
+    if (!confirm(`"${name}" bölümü ve içindeki ${count} paragraf kalıcı olarak silinsin mi?\nBu işlem geri alınamaz.`)) return;
+    const res = await apiDelete(`/chapters/${NicoleState.chapterId}`);
+    NicoleState.chapterId = res.next_chapter_id;
   } else {
     NicoleState.chapterId = choice;
   }
@@ -67,9 +75,17 @@ document.getElementById("projectsBtn").addEventListener("click", () => {
   window.location.href = "projects.html";
 });
 
-document.getElementById("exportBtn").addEventListener("click", () => {
+document.getElementById("exportBtn").addEventListener("click", async () => {
   if (!NicoleState.projectId) return;
-  window.location.href = `/api/projects/${NicoleState.projectId}/export`;
+  const res = await fetch(`/api/projects/${NicoleState.projectId}/export`);
+  if (!res.ok) return alert(`Word dosyası oluşturulamadı (${res.status}).`);
+  const pending = Number(res.headers.get("X-Unresolved-Flags") || 0);
+  if (pending > 0 && !confirm(`Romanda çözülmemiş ${pending} flag var — bu kelimeler olduğu gibi yazılacak.\nYine de indirilsin mi?`)) return;
+  const disposition = res.headers.get("Content-Disposition") || "";
+  const name = decodeURIComponent((disposition.match(/filename\*=UTF-8''([^;]+)/) || [, "roman.docx"])[1]);
+  const link = Object.assign(document.createElement("a"), { href: URL.createObjectURL(await res.blob()), download: name });
+  link.click();
+  URL.revokeObjectURL(link.href);
 });
 
 document.querySelectorAll(".side-tab").forEach((tab) => {

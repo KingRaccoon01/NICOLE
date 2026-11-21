@@ -245,9 +245,41 @@ async def add_missing_columns(conn) -> None:
         logger.warning("paragraphs tablosuna uncertain_json sütunu eklendi.")
 
 
+BACKUP_KEEP = 7  # son 7 günün yedeği saklanır
+
+
+def backup_database(db_file: Path | None, backup_dir: Path, keep: int = BACKUP_KEEP) -> Path | None:
+    """
+    Günde bir kez veritabanının kopyasını alır (yedekler/nicole-YYYY-AA-GG.db), en yeni `keep` tanesini
+    saklar. sqlite3 backup API'si kullanılır: dosya açıkken bile tutarlı kopya çıkar.
+    """
+    if db_file is None or not db_file.exists():
+        return None
+    backup_dir.mkdir(exist_ok=True)
+    target = backup_dir / f"{db_file.stem}-{dt.date.today().isoformat()}.db"
+    if not target.exists():
+        import sqlite3
+        src, dst = sqlite3.connect(db_file), sqlite3.connect(target)
+        try:
+            src.backup(dst)
+        finally:
+            src.close()
+            dst.close()
+        logger.info("Veritabanı yedeği alındı: %s", target)
+    for old in sorted(backup_dir.glob(f"{db_file.stem}-*.db"))[:-keep]:
+        old.unlink()
+    return target
+
+
 async def init_db() -> None:
+    db_file = _sqlite_file_from_url(config.DATABASE_URL)
+    try:
+        backup_database(db_file, config.BASE_DIR / "yedekler")
+    except Exception:
+        logger.exception("Otomatik yedek alınamadı (uygulama çalışmaya devam ediyor)")
+
     async with engine.begin() as conn:
-        await migrate_lore_per_project(conn, _sqlite_file_from_url(config.DATABASE_URL))
+        await migrate_lore_per_project(conn, db_file)
         await conn.run_sync(Base.metadata.create_all)
         await add_missing_columns(conn)
 

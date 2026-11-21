@@ -40,6 +40,11 @@ copy .env.example .env           # macOS/Linux: cp .env.example .env
 
 ## 3. Çalıştırma
 
+**Kolay yol (Windows):** proje klasöründeki **`Nicole Baslat.bat`** dosyasına çift tıkla. Ollama'yı
+(kapalıysa) başlatır, Nicole'yi açar ve tarayıcıda sayfayı açar. Kapatmak için açılan siyah pencereyi kapat.
+
+**Terminalden:**
+
 ```bash
 # Ollama arka planda çalışmıyorsa:
 ollama serve
@@ -53,15 +58,19 @@ oluştur, içine girince dikte/yazma ekranı açılır.
 
 - Whisper modeli ilk kullanımda bir kez indirilir (`WHISPER_MODEL_SIZE`'a göre ~150 MB – 3 GB),
   sonra internetsiz çalışır.
-- Bir şey çalışmıyorsa sağ üstteki **🛠 Debug** paneli Whisper/Ollama/Gemini bağlantılarını tek tek test eder.
+- **⚙ Ayarlar** panelinin üstünde Whisper / Ollama / Gemini'nin durumu görünür. Daha ayrıntılı
+  teşhis için panelin altındaki **🛠 Sorun giderme** linki bağlantıları tek tek test eder.
 
 ## 4. Kullanım
 
 - **Dikte:** Mikrofonu seç, kaydı başlat, konuş. Durdurduğunda metin yazılır ve taranır.
   Whisper'ın emin olmadığı kelimelerin altı noktalı çizilir.
-- **Bölümler:** Dikte panelinin üstündeki listeden bölüm değiştirebilir, yeni bölüm açabilir
-  veya bölümün adını değiştirebilirsin.
-- **⬇ DOCX:** Romanın tamamını tek bir Word dosyası olarak indirir (birden fazla bölüm varsa bölüm başlıklarıyla).
+- **Bölümler:** Dikte panelinin üstündeki listeden bölüm değiştirebilir, yeni bölüm açabilir,
+  adını değiştirebilir veya silebilirsin (son bölüm silinemez).
+- **⬇ DOCX:** Romanın tamamını tek bir Word dosyası olarak indirir (birden fazla bölüm varsa bölüm
+  başlıklarıyla). Çözülmemiş flag varsa önce sorar.
+- **Lore Sözlüğü:** Terim ekleyip silebilir, başka bir romanın terimlerini tek tıkla alabilirsin.
+- **⚙ Ayarlar:** Kısayol tuşları, flag taraması motoru (Ollama/Gemini) ve "emin olmama eşiği".
 - **Nicole Editör:** Hikâyen hakkında konuşabileceğin AI editör. "Metni doğrudan düzenleme izni"
   açıkken metinde değişiklik yapabilir; her değişiklik **Geri al** ile geri alınabilir.
 
@@ -74,14 +83,16 @@ oluştur, içine girince dikte/yazma ekranı açılır.
    - **Yanlış duyulmuş kelimeler** → bağlama göre en mantıklı kelimeyi önerir (örn. "falız" → "filiz").
    - **Sözlükte olmayan kurgusal adlar** → sözlükteki bir terimin yanlış duyulmuş haliyse doğru yazımını önerir.
 3. Tespit edilen kelime ekranda **kırmızı 🚩 rozet** olarak gösterilir.
-4. Rozete tıklanınca 4 seçenek çıkar:
+4. Rozete tıklanınca seçenekler çıkar:
 
    | Buton | Sonuç | Lore'a eklenir mi |
    |---|---|---|
-   | 🔵 Orijinali Kabul Et | Kelime aynen kalır | Evet, otomatik |
-   | 🟢 Öneriyi Kabul Et | Öneriyle değişir | Evet, otomatik |
-   | 🟡 Manuel Düzelt | Senin yazdığınla değişir | İsteğe bağlı |
+   | 🔵 Orijinali Kabul Et | Kelime aynen kalır (doğru bir kurgusal ad) | Evet, otomatik |
+   | 🟢 Öneriyi Kabul Et | Öneriyle değişir | Hayır — yanlış duyulan kelime sözlüğe girmez |
+   | 🟡 Manuel Düzelt | Senin yazdığınla değişir | İsteğe bağlı (sadece düzeltilmiş hali) |
    | ✕ İptal | Hiçbir şey değişmez | Hayır — kırmızı flag kalır |
+
+   Çözülmüş bir kelimeye tıklayıp kararı değiştirebilir ya da **↩ Kararı Geri Al** ile tekrar kırmızı yapabilirsin.
 
 5. Her romanın **kendi Lore Sözlüğü** vardır. Sözlükteki terimler Whisper'a da ipucu olarak verilir,
    böylece bir sonraki dikte de doğru yazılma ihtimali artar.
@@ -99,7 +110,13 @@ oluştur, içine girince dikte/yazma ekranı açılır.
   Editörde "hikâye bağlamı" kutusu açıkken romanın tamamı gider; kapatabilirsin.
   Ücretsiz Gemini katmanında Google gönderilen içeriği ürünlerini geliştirmek için kullanabilir.
 
-## 7. Testler
+## 7. Yedekler
+
+Nicole her açılışta (günde bir kez) romanlarının yedeğini `yedekler/` klasörüne alır ve son 7 günü
+saklar. Bir şey ters giderse: Nicole'yi kapat, `nicole.db` dosyasını bir kenara al ve istediğin
+yedeği `nicole.db` adıyla proje klasörüne kopyala.
+
+## 8. Testler
 
 ```bash
 pip install pytest
@@ -108,7 +125,7 @@ python -m pytest tests
 
 Testler ayrı, geçici bir veritabanı kullanır; romanlarına dokunmaz ve Whisper/Ollama/Gemini'ye istek atmaz.
 
-## 8. Klasör Yapısı
+## 9. Klasör Yapısı
 
 ```
 nicole/

@@ -76,14 +76,14 @@ async def test_lore_recovery():
             status = await lore_recovery.lore_status(session, None)
             mine = next(p for p in status["projects"] if p["id"] == project_id)
             s.check("Durum: sözlük boş, çözülmüş flag terimleri 'eksik' görünüyor",
-                    mine["lore_terms"] == 0 and mine["missing_from_lore"] == 2, str(mine))
+                    mine["lore_terms"] == 0 and mine["missing_from_lore"] == 1, str(mine))
 
             # 1) flag'lerden geri yazma
             rep = await lore_recovery.recover_lore(session, None, include_flags=True, project_ids=[project_id])
             mine_rep = next(p for p in rep["per_project"] if p["id"] == project_id)
-            s.check("Flag'lerden: mavi + yeşil terimler geri yazıldı", mine_rep["added_from_flags"] == 2, str(mine_rep))
-            s.check("Flag'lerden: sarı (manuel) ve kırmızı (bekleyen) terimler EKLENMEDİ",
-                    await _lore_has(session, t_raw, project_id) and await _lore_has(session, t_sug, project_id)
+            s.check("Flag'lerden: mavi terim geri yazıldı", mine_rep["added_from_flags"] == 1, str(mine_rep))
+            s.check("Flag'lerden: yeşil (yanlış duyulan), sarı ve kırmızı terimler EKLENMEDİ",
+                    await _lore_has(session, t_raw, project_id) and not await _lore_has(session, t_sug, project_id)
                     and not await _lore_has(session, t_man, project_id) and not await _lore_has(session, t_pen, project_id))
             rep2 = await lore_recovery.recover_lore(session, None, include_flags=True, project_ids=[project_id])
             mine_rep2 = next(p for p in rep2["per_project"] if p["id"] == project_id)

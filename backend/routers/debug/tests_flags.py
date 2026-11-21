@@ -98,8 +98,8 @@ async def test_flag_resolve():
                     r.status == FlagStatus.accepted_raw and r.final_text == raws[0] and await _lore_has(session, raws[0], project_id))
 
             r = await resolve_flag(f_sug.id, FlagResolveRequest(action="accept_suggestion"), session)
-            s.check("🟢 accept_suggestion: yeşil + final=öneri + lore'a eklendi",
-                    r.status == FlagStatus.accepted_suggestion and r.final_text == "oneri1" and await _lore_has(session, raws[1], project_id))
+            s.check("🟢 accept_suggestion: yeşil + final=öneri + yanlış duyulan kelime lore'a EKLENMEDİ",
+                    r.status == FlagStatus.accepted_suggestion and r.final_text == "oneri1" and not await _lore_has(session, raws[1], project_id))
 
             r = await resolve_flag(f_man.id, FlagResolveRequest(action="manual", manual_text="elle1", add_to_lore=False), session)
             s.check("🟡 manual (lore kapalı): sarı + lore'a EKLENMEDİ",
@@ -107,8 +107,8 @@ async def test_flag_resolve():
                     and not await _lore_has(session, raws[2], project_id) and not await _lore_has(session, "elle1", project_id))
 
             r = await resolve_flag(f_man2.id, FlagResolveRequest(action="manual", manual_text=manual_fixed, add_to_lore=True), session)
-            s.check("🟡 manual (lore açık): düzeltilmiş terim VE orijinal varyant lore'a eklendi",
-                    r.final_text == manual_fixed and await _lore_has(session, manual_fixed, project_id) and await _lore_has(session, raws[3], project_id))
+            s.check("🟡 manual (lore açık): SADECE düzeltilmiş terim lore'a eklendi",
+                    r.final_text == manual_fixed and await _lore_has(session, manual_fixed, project_id) and not await _lore_has(session, raws[3], project_id))
 
             r = await resolve_flag(f_iptal.id, FlagResolveRequest(action="cancel"), session)
             s.check("🔴 cancel: flag pending kaldı, lore'a eklenmedi",

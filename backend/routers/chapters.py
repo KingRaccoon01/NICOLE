@@ -33,6 +33,24 @@ async def rename_chapter(chapter_id: int, payload: ChapterCreate, session: Async
     return chapter
 
 
+@router.delete("/chapters/{chapter_id}")
+async def delete_chapter(chapter_id: int, session: AsyncSession = Depends(get_session)):
+    """Bölümü paragrafları ve flag'leriyle siler. Romanın son bölümü silinemez (dikte ekranı bir bölüme bağlı)."""
+    chapter = await session.get(Chapter, chapter_id)
+    if not chapter:
+        raise HTTPException(404, "Bölüm bulunamadı")
+    remaining = await session.execute(
+        select(Chapter.id).where(Chapter.project_id == chapter.project_id, Chapter.id != chapter_id).order_by(Chapter.order)
+    )
+    next_id = remaining.scalars().first()
+    if next_id is None:
+        raise HTTPException(400, "Romanın son bölümü silinemez")
+    await touch_project(session, chapter_id)
+    await session.delete(chapter)  # cascade: paragraflar ve flag'ler de gider
+    await session.commit()
+    return {"ok": True, "next_chapter_id": next_id}
+
+
 @router.get("/projects/{project_id}/chapters", response_model=list[ChapterOut])
 async def list_chapters(project_id: int, session: AsyncSession = Depends(get_session)):
     result = await session.execute(

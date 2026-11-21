@@ -49,11 +49,12 @@ class FlagResolveRequest(BaseModel):
     """
     Müdahale modalindeki 4 aksiyondan biri:
     - accept_raw          -> mavi, orijinal terim aynen kalır, lore'a otomatik eklenir
-    - accept_suggestion   -> yeşil, AI önerisi kullanılır, lore'a otomatik eklenir
+    - accept_suggestion   -> yeşil, öneri kullanılır (lore'a eklenmez)
     - manual              -> sarı, kullanıcının yazdığı metin kullanılır
     - cancel              -> hiçbir şey değişmez, kırmızı flag kalır
+    - reopen              -> çözülmüş flag tekrar kırmızı olur
     """
-    action: str  # "accept_raw" | "accept_suggestion" | "manual" | "cancel"
+    action: str  # "accept_raw" | "accept_suggestion" | "manual" | "cancel" | "reopen"
     manual_text: str | None = None
     add_to_lore: bool = False  # sadece action == "manual" iken anlamlı
 

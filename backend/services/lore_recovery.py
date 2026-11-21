@@ -4,8 +4,9 @@ Lore terimleri bir şekilde kaybolduysa (örn. veritabanı geçişi yarıda kald
 geri getirilir:
   1) Yarım kalmış geçişten arta kalan `lore_entries_old` tablosu
   2) Veritabanı dosyasının yanındaki yedekler (örn. nicole.db.bak-lore-per-project)
-  3) Romandaki ÇÖZÜLMÜŞ flag'ler: "orijinali kabul et" (mavi) ve "öneriyi kabul et" (yeşil)
-     her zaman terimi Lore'a eklediği için, o flag'lerin terimleri sözlüğe geri yazılır.
+  3) Romandaki "orijinali kabul et" (mavi) flag'ler: bu karar terimi her zaman Lore'a eklediği
+     için, o terimler sözlüğe geri yazılır. ("Öneriyi kabul et" artık eklemez: o terim yanlış
+     duyulmuş kelimedir.)
 Mevcut terimlere ve başka kayıtlara dokunulmaz; sadece EKSİK olanlar eklenir.
 """
 from __future__ import annotations
@@ -21,7 +22,7 @@ from .lore_detection import tr_lower
 
 logger = logging.getLogger("nicole.lore_recovery")
 
-_AUTO_RESOLVED = (FlagStatus.accepted_raw, FlagStatus.accepted_suggestion)
+_AUTO_RESOLVED = (FlagStatus.accepted_raw,)
 
 
 def find_backups(db_file: Path | None) -> list[Path]:
@@ -57,7 +58,7 @@ async def _table_names(session: AsyncSession) -> set[str]:
 
 
 async def _resolved_flag_terms(session: AsyncSession, project_id: int) -> list[str]:
-    """Bu romanda mavi/yeşil çözülmüş flag'lerin (yani Lore'a otomatik eklenmiş olması gereken) terimleri."""
+    """Bu romanda mavi çözülmüş flag'lerin (yani Lore'a otomatik eklenmiş olması gereken) terimleri."""
     result = await session.execute(
         select(FlaggedTerm.raw_text)
         .join(Paragraph, FlaggedTerm.paragraph_id == Paragraph.id)
