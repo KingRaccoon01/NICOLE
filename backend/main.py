@@ -14,7 +14,7 @@ from pathlib import Path
 from . import config
 from .database import init_db
 from .services import stt_service
-from .routers import projects, chapters, flags, lore, chat, export, dictation_ws, debug, transcribe  # noqa: debug -> GEÇİCİ, proje bitince silinecek
+from .routers import projects, chapters, flags, lore, chat, export, dictation_ws, debug, transcribe, tts  # noqa: debug -> GEÇİCİ, proje bitince silinecek
 
 # Python'ın varsayılan log seviyesi WARNING'dir — bu yüzden Ollama/Whisper/Gemini
 # servislerindeki logger.info(...)/logger.warning(...) çağrıları (örn. "Ollama flag
@@ -47,6 +47,7 @@ app.include_router(export.router)
 app.include_router(dictation_ws.router)
 app.include_router(debug.router)  # GEÇİCİ — proje bitince bu satırı ve backend/routers/debug.py'yi sil
 app.include_router(transcribe.router)
+app.include_router(tts.router)
 
 
 @app.middleware("http")

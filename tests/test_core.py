@@ -232,6 +232,14 @@ def test_uncertain_word_model_missed_is_still_flagged():
                    {"term": "Slyvenor", "suggestion": ""}, {"term": "Kal", "suggestion": "Kael"}]
 
 
+def test_tts_params_and_validation():
+    from backend.routers.tts import edge_params
+    assert edge_params(1.0, 1.0) == ("+0%", "+0Hz")
+    assert edge_params(1.2, 1.3) == ("+20%", "+15Hz")
+    assert edge_params(0.8, 0.6) == ("-20%", "-20Hz")
+    assert client.post("/api/tts", json={"text": ""}).status_code == 422
+
+
 def test_no_cors_for_foreign_sites():
     res = client.get("/api/projects", headers={"Origin": "https://kotu-site.example"})
     assert "access-control-allow-origin" not in res.headers

@@ -10,3 +10,4 @@ faster-whisper==1.0.3
 websockets==13.1
 python-multipart==0.0.12
 wordfreq>=3.1.1
+edge-tts>=7.0

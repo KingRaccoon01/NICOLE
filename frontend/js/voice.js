@@ -1,42 +1,72 @@
-// Nicole — Editör cevaplarını sesli okuma (tarayıcının kendi seslendirmesi: ücretsiz, kurulum yok).
-// En doğal Türkçe ses Edge'deki "Microsoft Emel Online (Natural)"; Chrome'da genelde sadece Tolga var.
+// Nicole — Editör cevaplarını sesli okuma.
+// 1) Sunucu sesi (☁): Nicole'nin sunucusu Microsoft'un doğal seslerinden mp3 üretir (Emel vb.) —
+//    tarayıcıdan bağımsızdır, Brave/Chrome'da da çalışır; internet ister.
+// 2) Tarayıcı sesi (💻): internet yoksa ya da sunucu sesi alınamazsa tarayıcının kendi sesi (ör. Tolga).
+// Ayar değeri "srv:<ad>" ya da "web:<ad>" biçiminde saklanır.
 
 const NicoleVoice = {
-  voices: [],
+  serverVoices: [],
+  defaultServerVoice: "tr-TR-EmelNeural",
+  audio: null,
 
-  load() {
-    this.voices = window.speechSynthesis ? speechSynthesis.getVoices() : [];
-    return this.voices;
+  webVoices() {
+    return window.speechSynthesis ? speechSynthesis.getVoices() : [];
   },
 
-  // Kayıtlı ses yoksa: Türkçe doğal kadın sesi (Emel) > herhangi bir Türkçe ses > tarayıcı varsayılanı
-  pick() {
-    const saved = NicoleSettings.get("ttsVoice");
-    return (
-      this.voices.find((v) => v.name === saved) ||
-      this.voices.find((v) => v.lang.startsWith("tr") && /emel/i.test(v.name)) ||
-      this.voices.find((v) => v.lang.startsWith("tr")) ||
-      null
-    );
+  choice() {
+    const saved = NicoleSettings.get("ttsVoice");  // eski sürümde önek olmadan saklanıyordu
+    return /^(srv|web):/.test(saved) ? saved : `srv:${this.defaultServerVoice}`;
   },
 
-  // Markdown işaretlerini ve emojileri okumasın; uzun metni cümlelere böl (bazı sesler ~15 sn sonra kesiliyor)
-  chunks(text) {
-    const clean = text
+  bestWebVoice(name) {
+    const voices = this.webVoices();
+    return voices.find((v) => v.name === name) || voices.find((v) => v.lang.startsWith("tr")) || null;
+  },
+
+  // Markdown işaretlerini ve emojileri okumasın
+  clean(text) {
+    return text
       .replace(/```[\s\S]*?```/g, " ")
-      .replace(/[*_#>`~|]/g, " ")
       .replace(/\[(.*?)\]\(.*?\)/g, "$1")
+      .replace(/[*_#>`~|]/g, " ")
       .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, " ")
       .replace(/\s+/g, " ")
       .trim();
-    return clean.match(/[^.!?…]+[.!?…]*\s*/g) || [];
   },
 
-  speak(text) {
-    if (!window.speechSynthesis) return;
+  async speak(text) {
     this.stop();
-    const voice = this.pick();
-    for (const part of this.chunks(text)) {
+    const clean = this.clean(text);
+    if (!clean) return;
+    const choice = this.choice();
+    if (choice.startsWith("srv:")) {
+      try {
+        const res = await fetch("/api/tts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            text: clean, voice: choice.slice(4),
+            rate: NicoleSettings.get("ttsRate") || 1, pitch: NicoleSettings.get("ttsPitch") || 1,
+          }),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const url = URL.createObjectURL(await res.blob());
+        this.audio = new Audio(url);
+        this.audio.addEventListener("ended", () => URL.revokeObjectURL(url));
+        await this.audio.play();
+        return;
+      } catch (err) {
+        console.warn("[Nicole] Sunucu sesi alınamadı, tarayıcı sesine geçiliyor:", err);
+      }
+    }
+    this.speakWeb(clean, choice.startsWith("web:") ? choice.slice(4) : "");
+  },
+
+  // Tarayıcı sesi: cümle cümle (bazı sesler uzun metinde ~15 sn sonra kesiliyor)
+  speakWeb(text, name) {
+    if (!window.speechSynthesis) return;
+    const voice = this.bestWebVoice(name);
+    for (const part of text.match(/[^.!?…]+[.!?…]*\s*/g) || []) {
       const u = new SpeechSynthesisUtterance(part);
       if (voice) { u.voice = voice; u.lang = voice.lang; } else { u.lang = "tr-TR"; }
       u.rate = NicoleSettings.get("ttsRate") || 1;
@@ -46,11 +76,12 @@ const NicoleVoice = {
   },
 
   stop() {
+    if (this.audio) { this.audio.pause(); this.audio = null; }
     if (window.speechSynthesis) speechSynthesis.cancel();
   },
 
   speaking() {
-    return !!(window.speechSynthesis && speechSynthesis.speaking);
+    return !!((this.audio && !this.audio.paused) || (window.speechSynthesis && speechSynthesis.speaking));
   },
 };
 
@@ -58,28 +89,40 @@ const NicoleVoice = {
 function fillVoiceSelect() {
   const select = document.getElementById("ttsVoiceSelect");
   if (!select) return;
-  const voices = NicoleVoice.load();
-  if (!voices.length) return;
-  // Edge yüzlerce dil getiriyor; sadece Türkçe (üstte), Japonca ve İngilizce sesler listelenir
-  const wanted = voices.filter((v) => /^(tr|ja|en)/i.test(v.lang) || v.name === NicoleSettings.get("ttsVoice"));
-  const sorted = [...wanted].sort((a, b) => (b.lang.startsWith("tr") - a.lang.startsWith("tr")) || a.name.localeCompare(b.name));
   select.innerHTML = "";
-  for (const v of sorted) select.add(new Option(`${v.name.replace(/^Microsoft /, "")} (${v.lang})`, v.name));
-  const current = NicoleVoice.pick();
-  if (current) select.value = current.name;
-  const hasNatural = voices.some((v) => v.lang.startsWith("tr") && /natural/i.test(v.name));
-  document.getElementById("ttsHint").textContent = hasNatural
-    ? ""
-    : "Bu tarayıcıda doğal Türkçe ses yok. Microsoft Edge'de 'Emel (Natural)' sesi var — çok daha doğal.";
+  if (NicoleVoice.serverVoices.length) {
+    const group = document.createElement("optgroup");
+    group.label = "☁ Doğal sesler (internet gerekir)";
+    for (const v of NicoleVoice.serverVoices) {
+      const label = v.name.replace(/Neural$/, "").replace(/^[a-z]{2}-[A-Z]{2}-/, "");
+      const lang = v.locale.startsWith("tr") ? "Türkçe" : "çok dilli";
+      group.append(new Option(`${label} (${lang}, ${v.gender === "Female" ? "kadın" : "erkek"})`, `srv:${v.name}`));
+    }
+    select.append(group);
+  }
+  const web = NicoleVoice.webVoices().filter((v) => /^(tr|ja|en)/i.test(v.lang));
+  if (web.length) {
+    const group = document.createElement("optgroup");
+    group.label = "💻 Tarayıcının sesleri (internetsiz)";
+    for (const v of web) group.append(new Option(`${v.name.replace(/^Microsoft /, "")} (${v.lang})`, `web:${v.name}`));
+    select.append(group);
+  }
+  select.value = NicoleVoice.choice();
+  if (!select.value && select.options.length) select.selectedIndex = 0;
+  document.getElementById("ttsHint").textContent = NicoleVoice.serverVoices.length
+    ? "☁ sesler her tarayıcıda çalışır; internet yoksa otomatik olarak tarayıcının sesine geçilir."
+    : "Doğal sesler alınamadı (internet yok mu?) — tarayıcının sesi kullanılacak.";
 }
 
-if (window.speechSynthesis) {
-  speechSynthesis.addEventListener?.("voiceschanged", fillVoiceSelect);
+(async function loadVoices() {
+  try {
+    const data = await apiGet("/tts/voices");
+    NicoleVoice.serverVoices = data.voices;
+    NicoleVoice.defaultServerVoice = data.default;
+  } catch (_) { /* internet yoksa sadece tarayıcı sesleri */ }
   fillVoiceSelect();
-} else {
-  const hint = document.getElementById("ttsHint");
-  if (hint) hint.textContent = "Bu tarayıcı sesli okumayı desteklemiyor.";
-}
+})();
+if (window.speechSynthesis) speechSynthesis.addEventListener?.("voiceschanged", fillVoiceSelect);
 
 bindSetting("ttsEnabled", "ttsEnabled");
 document.getElementById("ttsVoiceSelect")?.addEventListener("change", (e) => NicoleSettings.set("ttsVoice", e.target.value));
@@ -95,4 +138,6 @@ for (const [id, key] of [["ttsRateRange", "ttsRate"], ["ttsPitchRange", "ttsPitc
 }
 
 document.getElementById("ttsTestBtn")?.addEventListener("click", () =>
-  NicoleVoice.speak("Merhaba, ben Nicole. Hikâyende takıldığın bir yer varsa birlikte bakalım."));
+  NicoleVoice.speaking()
+    ? NicoleVoice.stop()
+    : NicoleVoice.speak("Merhaba, ben Nicole. Hikâyende takıldığın bir yer varsa birlikte bakalım."));
