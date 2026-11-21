@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<title>NICOLE</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="stylesheet" href="css/style.css" />
+<link rel="stylesheet" href="css/settings.css" />
+</head>
+<body class="app-shell">
+
+<header class="app-header">
+  <div class="brand">
+    <span class="logo">NICOLE</span>
+    <span class="subtitle">書く・語る・創る</span>
+  </div>
+  <div class="header-actions">
+    <span id="connStatus" style="font-size:12px;color:var(--paper-dim);">
+      <span class="status-dot" id="connDot"></span><span id="connText">bağlanıyor...</span>
+    </span>
+    <button class="btn" id="exportBtn">⬇ DOCX</button>
+    <a href="debug.html" class="btn" style="text-decoration:none; color:var(--gold);" title="Geçici debug paneli">🛠 Debug</a>
+    <button class="btn btn-primary" id="projectsBtn">☰ Romanlar</button>
+  </div>
+</header>
+
+<div class="workspace">
+
+  <!-- SOL PANEL: DİKTE AKIŞI -->
+  <section class="dictation-panel">
+    <div class="panel-toolbar">
+      <span id="chapterLabel">DİKTE AKIŞI</span>
+      <span class="stats">
+        <span id="paraCount">0 paragraf</span>
+        <span id="wordCount">0 kelime</span>
+        <span class="flag-count" id="flagCount">0 flag</span>
+      </span>
+    </div>
+
+    <div class="transcript-area thin-scroll" id="transcriptArea">
+      <div class="empty-state" id="emptyState">
+        <div class="kanji">円</div>
+        <div><strong>NICOLE</strong></div>
+        <div>Mikrofonu başlatın ve dikte etmeye başlayın</div>
+      </div>
+    </div>
+
+    <div class="keyboard-input-row" id="keyboardInputRow" style="display:none;">
+      <textarea id="keyboardTextarea" placeholder="Buraya yaz ve Enter'a bas (Shift+Enter yeni satır)..." rows="2"></textarea>
+      <button class="btn btn-primary" id="keyboardSendBtn">Ekle</button>
+    </div>
+
+    <div class="dictation-controls">
+      <button class="record-btn" id="recordBtn" title="Kayda başla/durdur">●</button>
+      <div class="record-status">
+        <span id="recordStatusText">Hazır · tıkla veya Space</span><br/>
+        <span class="time" id="recordTime">0:00</span>
+      </div>
+      <button class="btn" id="newParagraphBtn" title="Bir sonraki kayıt yeni bir paragraf olarak başlasın">¶ Yeni Paragraf</button>
+      <div class="spacer"></div>
+      <select class="control-select" id="inputModeSelect" title="Giriş modu">
+        <option value="whisper">🎙 Whisper (Sesli)</option>
+        <option value="keyboard">⌨ Klavye</option>
+      </select>
+      <select class="control-select" id="audioSourceSelect" title="Ses kaynağı">
+        <option value="">Mikrofon algılanıyor...</option>
+      </select>
+      <button class="btn" id="refreshAudioBtn" title="Mikrofon listesini yenile (yeni bağlanan Bluetooth kulaklık gibi)">🔄</button>
+    </div>
+    <div class="hotkey-bar">
+      <span class="hotkey-label">Kayıt tuşu</span>
+      <button class="key-btn" id="dictationKeyBtn" title="Tuşu değiştirmek için tıkla, sonra yeni tuşa bas (Esc: iptal)">Space</button>
+      <label class="hotkey-hold" for="dictationHold">
+        <input type="checkbox" id="dictationHold" />
+        Basılı tutarak kaydet (bırakınca durur)
+      </label>
+    </div>
+  </section>
+
+  <!-- SAĞ PANEL: EDİTÖR SOHBETİ + LORE SÖZLÜĞÜ -->
+  <section class="side-panel">
+    <div class="side-tabs">
+      <div class="side-tab active" data-tab="editor">✦ NICOLE EDİTÖR</div>
+      <div class="side-tab" data-tab="lore">◈ LORE SÖZLÜĞÜ</div>
+    </div>
+
+    <div class="side-tab-content active thin-scroll" id="tab-editor">
+      <div class="editor-intro">
+        <span class="label">✦ Nicole Editör</span>
+        Merhaba! Hikayeni benimle tartışmaya hazırım. Karakterlerin, plot twist'lerin,
+        dünya inşan hakkında sorularını bekliyor olacağım. Sol taraftaki metin akışını
+        otomatik olarak bağlam olarak alıyorum — hikaye henüz boş olsa da sormaya başlayabilirsin.
+        Her şeye "evet" demem: zayıf bulduğum yeri söylerim, fikrim olursa tartışırız.
+      </div>
+
+      <div class="chat-messages thin-scroll" id="chatMessages"></div>
+
+      <div class="chat-input-row">
+        <button class="chat-mic-btn" id="chatMicBtn" title="Sesle yaz">🎙</button>
+        <input type="text" id="chatInput" placeholder="Hikayeni Nicole Editör ile tartış..." />
+        <button class="chat-send-btn" id="chatSendBtn">➤</button>
+      </div>
+      <div id="chatMicStatus" class="chat-mic-status"></div>
+      <div class="context-toggle">
+        <input type="checkbox" id="includeContext" checked />
+        <label for="includeContext">Hikaye bağlamını ekle</label>
+        <span class="spacer"></span>
+        <a href="#" id="clearChatBtn" style="color:var(--paper-dim);">Sohbeti temizle</a>
+      </div>
+      <div class="context-toggle" style="margin-top:4px;">
+        <input type="checkbox" id="allowEdits" />
+        <label for="allowEdits" title="Açıkken Nicole, isteğin üzerine paragrafları doğrudan değiştirebilir, ekleyebilir veya silebilir. Her mesajdaki değişiklik 'Geri al' ile geri alınabilir.">Nicole'ye metni doğrudan düzenleme izni ver</label>
+      </div>
+      <div class="context-toggle" style="margin-top:4px;">
+        <input type="checkbox" id="autoSendVoice" />
+        <label for="autoSendVoice">Sesle konuşunca direkt gönder</label>
+      </div>
+      <div class="context-toggle hotkey-row" style="margin-top:4px;">
+        <span class="hotkey-label">Mikrofon tuşu</span>
+        <button class="key-btn" id="chatKeyBtn" title="Tuşu değiştirmek için tıkla, sonra yeni tuşa bas (Esc: iptal)">N</button>
+        <input type="checkbox" id="chatHold" />
+        <label for="chatHold">Basılı tutarak konuş (bırakınca durur)</label>
+      </div>
+    </div>
+
+    <div class="side-tab-content thin-scroll" id="tab-lore">
+      <input type="text" class="lore-search" id="loreSearch" placeholder="Terim ara..." />
+      <div style="display:flex; gap:8px; margin-bottom:12px;">
+        <input type="text" id="newLoreTerm" placeholder="Yeni terim" class="lore-search" style="margin-bottom:0;" />
+        <button class="btn btn-primary" id="addLoreBtn">Ekle</button>
+      </div>
+      <div id="loreList"></div>
+    </div>
+  </section>
+
+</div>
+
+<!-- MÜDAHALE MODAL -->
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="title">🚩 MÜDAHALE <span id="modalFlagIndex">#1</span></span>
+      <button class="close-btn" id="modalCloseBtn">✕</button>
+    </div>
+    <div class="modal-context">
+      <div class="label">İşaretlenen Terim</div>
+      <div class="text" id="modalTermText"></div>
+    </div>
+    <div class="modal-actions">
+      <div class="action-card accept-raw" data-action="accept_raw">
+        <span class="icon">🔵</span>
+        <div>
+          <div class="title">Orijinal Terimi Kabul Et</div>
+          <div class="desc" id="rawTermDesc">Kelime olduğu gibi kalsın</div>
+        </div>
+      </div>
+      <div class="action-card accept-suggestion" data-action="accept_suggestion">
+        <span class="icon">🟢</span>
+        <div>
+          <div class="title">Öneriyi Kabul Et</div>
+          <div class="desc" id="suggestionDesc">Yapay zekâ önerisini uygula</div>
+        </div>
+      </div>
+      <div class="action-card manual" data-action="manual">
+        <span class="icon">🟡</span>
+        <div>
+          <div class="title">Manuel Düzelt</div>
+          <div class="desc">Bu bölümü kendin düzenle</div>
+        </div>
+      </div>
+      <div class="action-card cancel" data-action="cancel">
+        <span class="icon">🔴</span>
+        <div>
+          <div class="title">İptal</div>
+          <div class="desc">Flag kırmızı olarak kalır</div>
+        </div>
+      </div>
+    </div>
+    <div class="manual-input-row" id="manualInputRow">
+      <input type="text" id="manualInputText" placeholder="Düzeltilmiş kelimeyi yaz..." />
+      <label><input type="checkbox" id="addToLoreCheck" /> Lore'a ekle</label>
+      <button class="btn btn-primary" id="manualConfirmBtn">Onayla</button>
+    </div>
+  </div>
+</div>
+
+<!-- LORE TERİMİ SİLME ONAY MODALI -->
+<div class="modal-overlay" id="deleteLoreModalOverlay">
+  <div class="modal" style="width:360px;">
+    <div class="modal-header">
+      <span class="title">🗑 Terimi Sil</span>
+      <button class="close-btn" id="deleteLoreCancelBtnX">✕</button>
+    </div>
+    <div class="modal-context" style="border-bottom:none;">
+      <div class="text">
+        "<strong id="deleteLoreTermName"></strong>" terimini Lore Sözlüğü'nden silmek
+        istediğine emin misin? Bu işlem geri alınamaz.
+      </div>
+    </div>
+    <div class="manual-input-row" style="display:flex; border-top:none; padding-top:0;">
+      <label style="flex:1;"><input type="checkbox" id="deleteLoreDontAskAgain" /> Bir daha sorma</label>
+    </div>
+    <div class="modal-actions" style="flex-direction:row; padding-top:0;">
+      <button class="btn" id="deleteLoreCancelBtn" style="flex:1;">İptal</button>
+      <button class="btn btn-primary" id="deleteLoreConfirmBtn" style="flex:1; background:var(--vermil); border-color:var(--vermil); color:white;">Sil</button>
+    </div>
+  </div>
+</div>
+
+<script src="js/api.js"></script>
+<script src="js/settings.js"></script>
+<script src="js/dictation.js"></script>
+<script src="js/flags.js"></script>
+<script src="js/editor_chat.js"></script>
+<script src="js/lore.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

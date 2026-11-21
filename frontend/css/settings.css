@@ -1,0 +1,18 @@
+/* Nicole — kısayol tuşu ayarları (Kayıt tuşu / Mikrofon tuşu) */
+.hotkey-bar {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 6px 20px 12px; background: var(--ink-2);
+  font-size: 12px; color: var(--paper-dim);
+}
+.hotkey-row { flex-wrap: wrap; }
+.hotkey-label { color: var(--paper-dim); }
+.hotkey-hold { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+
+.key-btn {
+  min-width: 64px; padding: 3px 10px;
+  background: var(--ink-3); border: 1px solid var(--border); border-bottom-width: 2px;
+  color: var(--paper); border-radius: 6px;
+  font-family: var(--font-mono); font-size: 12px; cursor: pointer;
+}
+.key-btn:hover { border-color: var(--gold); }
+.key-btn.capturing { border-color: var(--gold); color: var(--gold); }

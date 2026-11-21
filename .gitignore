@@ -1,0 +1,12 @@
+# Gizli ayarlar
+.env
+.env.example
+
+# Python
+venv/
+__pycache__/
+*.pyc
+
+# Kullanıcı verisi (romanlar)
+nicole.db
+nicole.db.bak*

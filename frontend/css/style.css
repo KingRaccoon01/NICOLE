@@ -1,0 +1,398 @@
+/* Nicole — Koyu Japon estetiği tema (ink/paper/vermil/gold/jade/ghost) */
+
+:root {
+  --ink: #0a0b0d;
+  --ink-2: #111318;
+  --ink-3: #171a20;
+  --paper: #e8e6df;
+  --paper-dim: #9a988f;
+  --vermil: #e5484d;      /* kırmızı flag */
+  --gold: #d4a24c;        /* sarı — manuel düzeltme */
+  --jade: #3ecf8e;        /* yeşil — öneri kabul */
+  --azure: #4c9fd4;       /* mavi — orijinal kabul */
+  --ghost: #6b6f76;
+  --border: #23262d;
+  --radius: 10px;
+  --font-mono: "JetBrains Mono", "Fira Code", ui-monospace, monospace;
+  --font-sans: "Inter", -apple-system, "Segoe UI", sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--ink);
+  color: var(--paper);
+  font-family: var(--font-sans);
+  min-height: 100vh;
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 24px;
+  border-bottom: 1px solid var(--border);
+  background: var(--ink-2);
+}
+
+.brand {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.brand .logo {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: var(--gold);
+}
+
+.brand .subtitle {
+  font-size: 12px;
+  color: var(--paper-dim);
+  letter-spacing: 0.15em;
+}
+
+.header-actions { display: flex; align-items: center; gap: 10px; }
+
+.btn {
+  border: 1px solid var(--border);
+  background: var(--ink-3);
+  color: var(--paper);
+  padding: 8px 14px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-size: 13px;
+  transition: border-color 0.15s ease;
+}
+.btn:hover { border-color: var(--gold); }
+.btn-primary { background: var(--gold); color: var(--ink); border-color: var(--gold); font-weight: 600; }
+.btn-ghost { background: transparent; }
+
+.status-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--ghost); display: inline-block; margin-right: 6px;
+}
+.status-dot.connected { background: var(--jade); }
+.status-dot.recording { background: var(--vermil); animation: pulse 1.2s infinite; }
+@keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:.4;} }
+
+/* "overflow:hidden" sadece app-shell (dikte ekranı) sayfasında istenir — debug.html
+   ve projects.html gibi normal içerik sayfaları kendi sayfa scroll'una ihtiyaç duyar. */
+body.app-shell { height: 100%; overflow: hidden; }
+html { height: 100%; }
+
+.workspace {
+  display: grid;
+  grid-template-columns: 1fr 420px;
+  height: calc(100vh - 61px);
+  min-height: 0;
+}
+
+/* --- Sol panel: Dikte akışı --- */
+.dictation-panel {
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border);
+  min-height: 0;
+}
+
+.panel-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--paper-dim);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.panel-toolbar .stats span { margin-left: 16px; }
+.panel-toolbar .stats .flag-count { color: var(--vermil); }
+
+.transcript-area {
+  flex: 1;
+  overflow-y: auto;
+  padding: 28px 40px;
+  min-height: 0;
+}
+
+.transcript-area .empty-state {
+  height: 100%;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  color: var(--paper-dim); text-align: center; gap: 8px;
+}
+.transcript-area .empty-state .kanji { font-size: 48px; color: var(--ghost); margin-bottom: 8px; }
+
+.paragraph-block { margin-bottom: 18px; line-height: 1.85; font-size: 15px; position: relative; }
+.paragraph-text { }
+
+/* Klavye modu aktifken (body.keyboard-mode) paragraflar tıklanıp yerinde
+   düzenlenebilir/silinebilir olur — görsel ipucu olarak hover'da hafif bir
+   arka plan ve metin imleci (cursor:text) gösteriyoruz. */
+body.keyboard-mode .paragraph-block {
+  cursor: text;
+  border-radius: 8px;
+  padding: 6px 10px;
+  margin-left: -10px;
+  margin-right: -10px;
+  transition: background 0.15s ease;
+}
+body.keyboard-mode .paragraph-block:hover {
+  background: rgba(212, 162, 76, 0.06);
+}
+.paragraph-delete-btn {
+  display: none; /* sadece keyboard-mode'da ve hover'da görünür */
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  background: var(--ink-3);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  color: var(--paper-dim);
+  cursor: pointer;
+  font-size: 13px;
+}
+body.keyboard-mode .paragraph-block:hover .paragraph-delete-btn {
+  display: flex;
+}
+.paragraph-delete-btn:hover {
+  background: rgba(229, 72, 77, 0.15);
+  border-color: var(--vermil);
+  color: var(--vermil);
+}
+
+.paragraph-edit-textarea {
+  width: 100%;
+  background: var(--ink-3);
+  border: 1px solid var(--gold);
+  border-radius: 8px;
+  color: var(--paper);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.85;
+  padding: 8px 10px;
+  resize: none;
+  overflow: hidden;
+  outline: none;
+}
+
+.para-marker {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 20px; height: 20px; border-radius: 50%;
+  background: var(--ink-3); border: 1px solid var(--border);
+  font-size: 11px; color: var(--paper-dim); margin-right: 6px; vertical-align: middle;
+}
+
+.flag-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: rgba(229,72,77,0.12); color: var(--vermil);
+  border: 1px solid rgba(229,72,77,0.4);
+  border-radius: 999px; padding: 1px 8px; font-size: 12px; cursor: pointer;
+  margin: 0 2px; vertical-align: middle;
+}
+.flag-badge:hover { background: rgba(229,72,77,0.22); }
+
+.resolved-term { border-radius: 4px; padding: 0 3px; cursor: pointer; }
+.resolved-term.blue  { background: rgba(76,159,212,0.15); color: var(--azure); }
+.resolved-term.green { background: rgba(62,207,142,0.15); color: var(--jade); }
+.resolved-term.yellow{ background: rgba(212,162,76,0.15); color: var(--gold); }
+
+.keyboard-input-row {
+  display: flex; gap: 10px; padding: 14px 20px; border-top: 1px solid var(--border); background: var(--ink-2);
+}
+.keyboard-input-row textarea {
+  flex: 1; background: var(--ink-3); border: 1px solid var(--border); color: var(--paper);
+  border-radius: var(--radius); padding: 10px 12px; font-size: 14px; font-family: var(--font-sans);
+  resize: vertical; line-height: 1.5;
+}
+
+.dictation-controls {
+  display: flex; align-items: center; gap: 12px;
+  padding: 14px 20px; border-top: 1px solid var(--border); background: var(--ink-2);
+}
+
+.record-btn {
+  width: 46px; height: 46px; border-radius: 50%;
+  background: var(--vermil); border: none; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; color: white;
+}
+.record-btn.recording { animation: pulse 1s infinite; }
+
+.record-status { font-size: 12px; color: var(--paper-dim); min-width: 130px; }
+.record-status .time { color: var(--paper); font-family: var(--font-mono); }
+
+select.control-select {
+  background: var(--ink-3); color: var(--paper); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 8px 10px; font-size: 13px;
+}
+
+.spacer { flex: 1; }
+
+/* --- Sağ panel: Editör sohbeti + Lore --- */
+.side-panel { display: flex; flex-direction: column; min-height: 0; }
+
+.side-tabs { display: flex; border-bottom: 1px solid var(--border); }
+.side-tab {
+  flex: 1; padding: 12px; text-align: center; font-size: 13px; letter-spacing: 0.06em;
+  color: var(--paper-dim); cursor: pointer; border-bottom: 2px solid transparent;
+}
+.side-tab.active { color: var(--gold); border-bottom-color: var(--gold); }
+
+.side-tab-content { flex: 1; overflow-y: auto; padding: 16px; display: none; min-height: 0; }
+.side-tab-content.active { display: flex; flex-direction: column; }
+
+.editor-intro {
+  background: rgba(62,207,142,0.06); border: 1px solid rgba(62,207,142,0.25);
+  border-radius: var(--radius); padding: 14px 16px; font-size: 13px; line-height: 1.6; color: var(--paper);
+}
+.editor-intro .label { color: var(--jade); font-weight: 600; margin-bottom: 6px; display: block; }
+
+.chat-messages { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; margin: 12px 0; min-height: 0; }
+
+/* --- İnce, temaya uygun scrollbar — sadece scroll sırasında görünür, sonra kaybolur --- */
+.thin-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+.thin-scroll::-webkit-scrollbar { width: 6px; }
+.thin-scroll::-webkit-scrollbar-track { background: transparent; }
+.thin-scroll::-webkit-scrollbar-thumb { background: transparent; border-radius: 999px; }
+.thin-scroll.scrolling {
+  scrollbar-color: var(--border) transparent;
+}
+.thin-scroll.scrolling::-webkit-scrollbar-thumb { background: var(--border); }
+.thin-scroll.scrolling:hover::-webkit-scrollbar-thumb,
+.thin-scroll:hover.scrolling::-webkit-scrollbar-thumb { background: var(--ghost); }
+
+.chat-bubble { padding: 10px 12px; border-radius: 10px; font-size: 13px; line-height: 1.6; max-width: 90%; }
+.chat-bubble.user { align-self: flex-end; background: var(--ink-3); }
+.chat-bubble.assistant { align-self: flex-start; background: rgba(62,207,142,0.08); border: 1px solid rgba(62,207,142,0.2); }
+
+.chat-input-row { display: flex; gap: 8px; align-items: center; }
+.chat-input-row input[type=text] {
+  flex: 1; background: var(--ink-3); border: 1px solid var(--border); color: var(--paper);
+  border-radius: var(--radius); padding: 10px 12px; font-size: 13px;
+}
+.chat-mic-btn {
+  width: 40px; height: 40px; border-radius: var(--radius); background: var(--ink-3);
+  border: 1px solid var(--border); cursor: pointer; color: var(--paper-dim);
+  display: flex; align-items: center; justify-content: center; font-size: 15px; flex-shrink: 0;
+}
+.chat-mic-btn:hover { border-color: var(--gold); color: var(--gold); }
+.chat-mic-btn.recording {
+  background: var(--vermil); border-color: var(--vermil); color: white; animation: pulse 1s infinite;
+}
+.chat-mic-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.chat-mic-status {
+  font-size: 11px; color: var(--paper-dim); margin-top: 6px; min-height: 14px;
+}
+.chat-mic-status.error { color: var(--vermil); }
+.chat-mic-status.active { color: var(--gold); }
+
+.context-toggle { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--paper-dim); margin-top: 8px; }
+
+/* --- Lore sözlüğü --- */
+.lore-search { width: 100%; padding: 10px; background: var(--ink-3); border: 1px solid var(--border); color: var(--paper); border-radius: var(--radius); margin-bottom: 12px; }
+.lore-entry-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 12px 4px; border-bottom: 1px solid var(--border);
+}
+.lore-entry-info { flex: 1; min-width: 0; }
+.lore-entry-info .term { color: var(--gold); font-weight: 600; font-size: 14px; }
+.lore-entry-info .def { color: var(--paper-dim); font-size: 13px; margin-top: 3px; }
+.lore-entry-info .source-tag { font-size: 10px; color: var(--ghost); text-transform: uppercase; letter-spacing: 0.06em; margin-left: 4px; }
+
+.lore-delete-btn {
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; width: 34px; height: 34px;
+  background: var(--ink-3); border: 1px solid var(--border); border-radius: 9px;
+  cursor: pointer; font-size: 16px; color: var(--paper-dim);
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease, transform 0.1s ease;
+}
+.lore-delete-btn:hover {
+  background: rgba(229,72,77,0.15); border-color: var(--vermil); color: var(--vermil);
+}
+.lore-delete-btn:active { transform: scale(0.94); }
+
+/* --- Müdahale Modal --- */
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.6);
+  display: none; align-items: center; justify-content: center; z-index: 100;
+}
+.modal-overlay.open { display: flex; }
+
+.modal {
+  width: 420px; background: var(--ink-2); border: 1px solid var(--border);
+  border-radius: 14px; overflow: hidden;
+}
+.modal-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 20px; border-bottom: 1px solid var(--border);
+}
+.modal-header .title { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+.modal-header .close-btn { cursor: pointer; color: var(--paper-dim); background: none; border: none; font-size: 18px; }
+
+.modal-context { padding: 16px 20px; border-bottom: 1px solid var(--border); }
+.modal-context .label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--paper-dim); margin-bottom: 6px; }
+.modal-context .text { font-size: 13px; line-height: 1.6; color: var(--paper); }
+
+.modal-actions { padding: 16px 20px; display: flex; flex-direction: column; gap: 10px; }
+
+.action-card {
+  display: flex; align-items: center; gap: 12px; padding: 12px 14px;
+  border-radius: var(--radius); border: 1px solid var(--border); cursor: pointer; background: var(--ink-3);
+}
+.action-card:hover { border-color: var(--gold); }
+.action-card .icon { font-size: 16px; width: 22px; text-align: center; }
+.action-card .title { font-size: 13px; font-weight: 600; }
+.action-card .desc { font-size: 11px; color: var(--paper-dim); }
+
+.action-card.accept-raw .icon { color: var(--azure); }
+.action-card.accept-suggestion .icon { color: var(--jade); }
+.action-card.manual .icon { color: var(--gold); }
+.action-card.cancel .icon { color: var(--vermil); }
+
+.manual-input-row { display: none; gap: 8px; padding: 0 20px 16px; }
+.manual-input-row.open { display: flex; }
+.manual-input-row input[type=text] {
+  flex: 1; background: var(--ink-3); border: 1px solid var(--border); color: var(--paper);
+  border-radius: var(--radius); padding: 8px 10px; font-size: 13px;
+}
+.manual-input-row label { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--paper-dim); white-space: nowrap; }
+
+/* --- Gönder butonu: genel temaya uygun (koyu zemin, ince kenarlık) --- */
+.chat-send-btn {
+  width: 40px; height: 40px; border-radius: var(--radius); background: var(--ink-3);
+  border: 1px solid var(--border); cursor: pointer; color: var(--paper-dim);
+  display: flex; align-items: center; justify-content: center; font-size: 15px; flex-shrink: 0;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease, transform 0.1s ease;
+}
+.chat-send-btn:hover { border-color: var(--jade); color: var(--jade); background: rgba(62,207,142,0.08); }
+.chat-send-btn:active { transform: scale(0.94); }
+
+/* --- Mikrofon durum yazısı (zaten ekliyse tekrar eklenmesi zararsız) --- */
+.chat-mic-status {
+  font-size: 11px; color: var(--paper-dim); margin-top: 6px; min-height: 14px;
+}
+.chat-mic-status.error { color: var(--vermil); }
+.chat-mic-status.active { color: var(--gold); }
+
+/* --- Nicole Editör: metne yapılan düzenlemeler + "Düşünüyor" balonu --- */
+.chat-bubble.pending { opacity: 0.6; font-style: italic; }
+.edit-card { margin-top: 8px; padding: 8px 10px; border-radius: 8px; background: var(--ink-3); border: 1px solid var(--border); font-size: 12px; }
+.edit-card-header { color: var(--gold); margin-bottom: 6px; }
+.edit-row { display: flex; gap: 8px; margin-bottom: 4px; color: var(--paper-dim); }
+.edit-label { flex-shrink: 0; color: var(--paper); }
+.edit-text { min-width: 0; overflow-wrap: anywhere; }
+.edit-undo-btn { margin-top: 6px; background: transparent; border: 1px solid var(--border); color: var(--paper); border-radius: 6px; padding: 3px 10px; font-size: 12px; cursor: pointer; }
+.edit-undo-btn:hover { border-color: var(--gold); color: var(--gold); }
+.edit-undo-btn:disabled { opacity: 0.5; cursor: not-allowed; }
