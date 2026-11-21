@@ -389,6 +389,10 @@ select.control-select {
 
 /* --- Nicole Editör: metne yapılan düzenlemeler + "Düşünüyor" balonu --- */
 .chat-bubble.pending { opacity: 0.6; font-style: italic; }
+.chat-bubble.assistant { position: relative; padding-right: 26px; }
+.chat-speak-btn { position: absolute; top: 4px; right: 4px; background: none; border: none; cursor: pointer;
+  font-size: 12px; opacity: 0.35; padding: 2px; }
+.chat-speak-btn:hover { opacity: 1; }
 .edit-card { margin-top: 8px; padding: 8px 10px; border-radius: 8px; background: var(--ink-3); border: 1px solid var(--border); font-size: 12px; }
 .edit-card-header { color: var(--gold); margin-bottom: 6px; }
 .edit-row { display: flex; gap: 8px; margin-bottom: 4px; color: var(--paper-dim); }

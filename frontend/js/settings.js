@@ -19,6 +19,10 @@ const NicoleSettings = (() => {
     chatHold: false,
     flagEngine: "",         // Flag taraması: "" (.env), "ollama" | "gemini"
     uncertainProb: 0,       // Emin olmama eşiği; 0 = .env ayarı (WHISPER_UNCERTAIN_PROB)
+    ttsEnabled: false,      // Nicole Editör cevaplarını sesli oku
+    ttsVoice: "",           // Seçili ses adı ("" = en iyi Türkçe ses otomatik)
+    ttsRate: 1,             // Konuşma hızı
+    ttsPitch: 1,            // Ses tonu (yükseldikçe daha ince/genç)
   };
   const data = { ...DEFAULTS };
 

@@ -95,6 +95,15 @@ function renderChatMessage(msg, opts = {}) {
   body.textContent = msg.content;
   bubble.appendChild(body);
 
+  if (msg.role !== "user" && !opts.pending && typeof NicoleVoice !== "undefined") {
+    const speakBtn = document.createElement("button");
+    speakBtn.className = "chat-speak-btn";
+    speakBtn.title = "Sesli oku / durdur";
+    speakBtn.textContent = "🔊";
+    speakBtn.addEventListener("click", () => (NicoleVoice.speaking() ? NicoleVoice.stop() : NicoleVoice.speak(msg.content)));
+    bubble.appendChild(speakBtn);
+  }
+
   if (msg.edits && msg.edits.length) {
     bubble.appendChild(buildEditsCard(msg));
   }
@@ -111,6 +120,7 @@ async function sendChatMessage() {
 
   renderChatMessage({ role: "user", content: text });
   input.value = "";
+  NicoleVoice.stop();
 
   const includeContext = document.getElementById("includeContext").checked;
   const allowEdits = document.getElementById("allowEdits")?.checked || false;
@@ -125,6 +135,7 @@ async function sendChatMessage() {
     });
     thinking.remove();
     renderChatMessage(reply);
+    if (reply.id !== 0 && NicoleSettings.get("ttsEnabled")) NicoleVoice.speak(reply.content);
     if (reply.id === 0 && !input.value) input.value = text; // hata: mesaj kaydedilmedi, tekrar denemek için geri koy
     if (reply.edits && reply.edits.length) {
       await reloadTranscript(); // Editör metne dokunduysa sol panel hemen güncellensin
@@ -200,6 +211,7 @@ async function toggleChatMic() {
 }
 
 async function startChatRecording() {
+  NicoleVoice.stop(); // Nicole konuşurken mikrofon onun sesini kaydetmesin
   if (ChatMic.recording || ChatMic.starting || ChatMic.busy) return;
   if (typeof Dictation !== "undefined" && (Dictation.recording || Dictation.starting)) {
     setChatMicStatus("⚠ Dikte mikrofonu açık — önce dikteyi durdur.", "error");

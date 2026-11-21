@@ -198,6 +198,7 @@ async function toggleRecording() {
 
 async function startRecording() {
   if (Dictation.recording || Dictation.starting) return;
+  if (typeof NicoleVoice !== "undefined") NicoleVoice.stop(); // Nicole'nin sesi dikteye karışmasın
   if (typeof ChatMic !== "undefined" && (ChatMic.recording || ChatMic.starting)) {
     showDictationError("Nicole'nin mikrofonu açık — önce onu durdur.");
     return;
