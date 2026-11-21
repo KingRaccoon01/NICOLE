@@ -66,7 +66,8 @@ async def test_story_context():
                     "Takeshi caki kullandi." in ctx and "chidori" not in ctx)
 
             ctx_ids = await _build_story_context(session, project_id, with_ids=True)
-            s.check("with_ids=True: paragraflar [P<id>] etiketli", f"[P{p_flag_id}] Takeshi caki kullandi." in ctx_ids)
+            s.check("with_ids=True: paragraflar romandaki sırayla [P1], [P2]... etiketli",
+                    "[P1] BIRINCI-1" in ctx_ids and "[P3] Takeshi caki kullandi." in ctx_ids and "[P4] IKINCI-1" in ctx_ids)
             s.check("with_ids=False: etiket yok", "[P" not in ctx)
 
             empty = Project(title="__debug_context_empty__")

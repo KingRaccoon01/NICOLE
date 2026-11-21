@@ -7,6 +7,7 @@ olmayan tarayıcılarda da aynı ses ("Emel") çalışır. edge-tts, Microsoft E
 ulaşılamazsa ön yüz otomatik olarak tarayıcının kendi sesine düşer.
 """
 from __future__ import annotations
+import asyncio
 import itertools
 import logging
 
@@ -19,9 +20,9 @@ router = APIRouter(prefix="/api/tts", tags=["tts"])
 
 DEFAULT_VOICE = "tr-TR-EmelNeural"
 _voices_cache: list[dict] | None = None
-# Hazırlanan okumalar: POST metni bırakır, tarayıcının <audio> öğesi GET ile akış olarak çeker.
-# (Ses çalar POST yapamaz; tamamını beklemek kısa bir cevapta 7, uzun bir cevapta 14 sn sürüyordu.)
-_pending: dict[str, "TTSRequest"] = {}
+# Hazırlanan okumalar: POST metni bırakır (üretim hemen başlar), tarayıcının <audio> öğesi GET ile akış
+# olarak çeker. (Ses çalar POST yapamaz; tamamını beklemek kısa cevapta 7, uzun cevapta 14 sn sürüyordu.)
+_pending: dict[str, "_Job"] = {}
 _ids = itertools.count(1)
 _MAX_PENDING = 20
 
@@ -57,44 +58,71 @@ async def voices():
     return {"default": DEFAULT_VOICE, "voices": _voices_cache}
 
 
+class _Job:
+    """
+    Bir okuma: metin gelir gelmez arka planda üretilmeye başlar (tarayıcının ses isteğini beklemez —
+    o gidiş-dönüş ve <audio> hazırlığı üretimle üst üste biner). Parçalar saklanır: tarayıcı aynı adresi
+    tekrar isterse baştan, yeniden üretmeden verilir.
+    """
+
+    def __init__(self, payload: TTSRequest):
+        self.chunks: list[bytes] = []
+        self.done = False
+        self.error: Exception | None = None
+        self.cond = asyncio.Condition()
+        self.task = asyncio.create_task(self._run(payload))
+
+    async def _run(self, payload: TTSRequest) -> None:
+        import edge_tts
+        rate, pitch = edge_params(payload.rate, payload.pitch)
+        try:
+            async for chunk in edge_tts.Communicate(payload.text, payload.voice, rate=rate, pitch=pitch).stream():
+                if chunk["type"] == "audio":
+                    async with self.cond:
+                        self.chunks.append(chunk["data"])
+                        self.cond.notify_all()
+        except Exception as exc:
+            self.error = exc
+            logger.warning("Sesli okuma başarısız (%s: %s)", type(exc).__name__, exc)
+        finally:
+            async with self.cond:
+                self.done = True
+                self.cond.notify_all()
+
+    async def first_ready(self) -> bool:
+        async with self.cond:
+            await self.cond.wait_for(lambda: self.chunks or self.done)
+        return bool(self.chunks)
+
+    async def iterate(self):
+        sent = 0
+        while True:
+            async with self.cond:
+                await self.cond.wait_for(lambda: sent < len(self.chunks) or self.done)
+                new, finished = self.chunks[sent:], self.done
+            sent += len(new)
+            for data in new:
+                yield data
+            if finished and sent >= len(self.chunks):
+                return
+
+
 @router.post("")
 async def prepare(payload: TTSRequest):
-    """Okunacak metni bırakır; dönen adres <audio src> olarak kullanılır ve ses akış halinde gelir."""
+    """Okunacak metni bırakır ve üretimi hemen başlatır; dönen adres <audio src> olarak kullanılır."""
     while len(_pending) >= _MAX_PENDING:  # hiç çalınmayanlar birikmesin
-        _pending.pop(next(iter(_pending)))
+        _pending.pop(next(iter(_pending))).task.cancel()
     token = str(next(_ids))
-    _pending[token] = payload
+    _pending[token] = _Job(payload)
     return {"url": f"/api/tts/stream/{token}"}
 
 
 @router.get("/stream/{token}")
 async def stream(token: str):
-    payload = _pending.get(token)  # silinmez: tarayıcı aynı sesi tekrar isterse yeniden üretilir (en eski 20 tutulur)
-    if payload is None:
+    job = _pending.get(token)  # silinmez: tarayıcı aynı sesi tekrar isterse saklanan parçalar verilir
+    if job is None:
         raise HTTPException(404, "Bu okuma bulunamadı (süresi geçti)")
-    import edge_tts
-    rate, pitch = edge_params(payload.rate, payload.pitch)
-    chunks = edge_tts.Communicate(payload.text, payload.voice, rate=rate, pitch=pitch).stream()
-    # İlk parçayı burada bekle: hata (internet yok, geçersiz ses) olursa 502 dönsün, ön yüz tarayıcı sesine geçsin
-    try:
-        first = None
-        async for chunk in chunks:
-            if chunk["type"] == "audio":
-                first = chunk["data"]
-                break
-    except Exception as exc:
-        logger.warning("Sesli okuma başarısız (%s: %s)", type(exc).__name__, exc)
-        raise HTTPException(502, f"Ses üretilemedi: {exc}")
-    if first is None:
-        raise HTTPException(502, "Ses üretilemedi (boş yanıt)")
-
-    async def rest():
-        yield first
-        try:
-            async for chunk in chunks:
-                if chunk["type"] == "audio":
-                    yield chunk["data"]
-        except Exception as exc:  # yarıda kesilirse o ana kadarki kısım çalınmış olur
-            logger.warning("Sesli okuma yarıda kesildi (%s: %s)", type(exc).__name__, exc)
-
-    return StreamingResponse(rest(), media_type="audio/mpeg")
+    # İlk parçayı bekle: hata (internet yok, geçersiz ses) olursa 502 dönsün, ön yüz tarayıcı sesine geçsin
+    if not await job.first_ready():
+        raise HTTPException(502, f"Ses üretilemedi: {job.error or 'boş yanıt'}")
+    return StreamingResponse(job.iterate(), media_type="audio/mpeg")

@@ -76,13 +76,14 @@ async def test_editor_edits():
         next_text["value"] = _json.dumps({
             "reply": "Üç şeyi değiştirdim.",
             "edits": [
-                {"action": "replace", "paragraph_id": p1_id, "new_text": "Yeni birinci."},
-                {"action": "insert_after", "paragraph_id": p2_id, "new_text": "Araya eklenen."},
-                {"action": "delete", "paragraph_id": p3_id},
-                {"action": "replace", "paragraph_id": foreign_para_id, "new_text": "SALDIRI"},   # başka projenin paragrafı
-                {"action": "replace", "paragraph_id": 99999999, "new_text": "uydurma id"},        # olmayan id
-                {"action": "replace", "paragraph_id": p2_id, "new_text": "   "},                  # boş metin
-                {"action": "yok_boyle_aksiyon", "paragraph_id": p2_id, "new_text": "x"},          # bilinmeyen aksiyon
+                # paragraph_id = romandaki sıra etiketi (P1, P2, P3), veritabanı id'si değil
+                {"action": "replace", "paragraph_id": 1, "new_text": "Yeni birinci."},
+                {"action": "insert_after", "paragraph_id": 2, "new_text": "Araya eklenen."},
+                {"action": "delete", "paragraph_id": 3},
+                {"action": "replace", "paragraph_id": foreign_para_id, "new_text": "SALDIRI"},   # başka projenin gerçek id'si
+                {"action": "replace", "paragraph_id": 99999999, "new_text": "uydurma id"},        # olmayan etiket
+                {"action": "replace", "paragraph_id": 2, "new_text": "   "},                      # boş metin
+                {"action": "yok_boyle_aksiyon", "paragraph_id": 2, "new_text": "x"},              # bilinmeyen aksiyon
             ],
         }, ensure_ascii=False)
         async with AsyncSessionLocal() as session:
@@ -91,8 +92,8 @@ async def test_editor_edits():
         body = captured[-1]
         sys_text = body["systemInstruction"]["parts"][0]["text"]
         s.check("Düzenleme modu: JSON çıktısı isteniyor", body["generationConfig"].get("responseMimeType") == "application/json")
-        s.check("Düzenleme modu: bağlam zorunlu eklendi ve paragraflar [P<id>] etiketli",
-                f"[P{p1_id}]" in sys_text and "DÜZENLEME İZNİ AÇIK" in sys_text)
+        s.check("Düzenleme modu: bağlam zorunlu eklendi ve paragraflar sırayla [P1], [P2]... etiketli",
+                "[P1] Birinci" in sys_text and "[P3] Üçüncü" in sys_text and "DÜZENLEME İZNİ AÇIK" in sys_text)
         s.check("Sohbet cevabı düz metin olarak kaydedildi (JSON değil)", reply.content == "Üç şeyi değiştirdim.")
         s.check("Sadece 3 GEÇERLİ düzenleme uygulandı (4 geçersiz reddedildi)", len(reply.edits) == 3,
                 f"{len(reply.edits)} düzenleme: {[e.action for e in reply.edits]}")

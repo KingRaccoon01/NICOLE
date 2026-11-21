@@ -316,6 +316,53 @@ def test_stream_sse_parts():
     assert _stream_parts("") == [] and _stream_parts("data: bozuk") == []
 
 
+def test_edit_labels_are_positions_not_db_ids():
+    import json as _json
+    from backend.services import gemini_service as g
+
+    pid, cid = _project()
+    for t in ("Bir.", "İki.", "Üç."):
+        client.post(f"/api/chapters/{cid}/paragraphs", json={"text": t})
+    seen = {}
+
+    async def fake_post(url, body, attempts=4):
+        seen["sys"] = body["systemInstruction"]["parts"][0]["text"]
+        reply = {"reply": "2. paragrafı değiştirdim.", "edits": [{"action": "replace", "paragraph_id": 2, "new_text": "YENİ"}]}
+        return {"candidates": [{"content": {"parts": [{"text": _json.dumps(reply)}]}}]}
+
+    from backend import config
+    orig = (g._post_with_retry, config.GEMINI_API_KEY)
+    g._post_with_retry, config.GEMINI_API_KEY = fake_post, "test"
+    try:
+        client.post(f"/api/projects/{pid}/chat", json={"content": "2. paragrafı değiştir", "allow_edits": True})
+    finally:
+        g._post_with_retry, config.GEMINI_API_KEY = orig
+    assert "[P1] Bir." in seen["sys"] and "[P3] Üç." in seen["sys"]
+    assert _texts(cid) == ["Bir.", "YENİ", "Üç."]
+
+
+def test_tts_job_streams_and_replays(monkeypatch):
+    import sys as _sys
+    import types
+
+    class FakeCommunicate:
+        def __init__(self, text, voice, rate, pitch):
+            self.voice = voice
+
+        async def stream(self):
+            if self.voice == "bozuk":
+                raise ValueError("Invalid voice")
+            for part in (b"AA", b"BB", b"CC"):
+                yield {"type": "audio", "data": part}
+
+    monkeypatch.setitem(_sys.modules, "edge_tts", types.SimpleNamespace(Communicate=FakeCommunicate))
+    url = client.post("/api/tts", json={"text": "Merhaba"}).json()["url"]
+    assert client.get(url).content == b"AABBCC"
+    assert client.get(url).content == b"AABBCC"  # tarayıcı tekrar isterse yeniden üretmeden verilir
+    bad = client.post("/api/tts", json={"text": "Merhaba", "voice": "bozuk"}).json()["url"]
+    assert client.get(bad).status_code == 502
+
+
 def test_no_cors_for_foreign_sites():
     res = client.get("/api/projects", headers={"Origin": "https://kotu-site.example"})
     assert "access-control-allow-origin" not in res.headers

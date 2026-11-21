@@ -27,16 +27,7 @@ MAX_EDITS_PER_MESSAGE = 20
 # Hikâye bağlamı
 # ---------------------------------------------------------------------------
 
-async def _build_story_context(session: AsyncSession, project_id: int, with_ids: bool = False) -> str:
-    """
-    'Hikaye bağlamını ekle' işaretliyken tüm projedeki metni tek stringe indirger
-    (bölüm sırası -> paragraf sırası, bölüm başlıklarıyla).
-
-    - Çözülmüş flag'ler nihai halleriyle yazılır (örn. 'chidori' -> 'çakı' kabul
-      edildiyse 'çakı'), bekleyenler orijinal haliyle — DOCX export ile aynı mantık.
-    - with_ids=True (düzenleme izni açıkken): her paragraf [P<id>] etiketiyle başlar,
-      böylece Editör hangi paragrafı değiştireceğini id ile söyleyebilir.
-    """
+async def _ordered_paragraphs(session: AsyncSession, project_id: int) -> list[Paragraph]:
     result = await session.execute(
         select(Paragraph)
         .join(Chapter, Paragraph.chapter_id == Chapter.id)
@@ -44,14 +35,34 @@ async def _build_story_context(session: AsyncSession, project_id: int, with_ids:
         .options(selectinload(Paragraph.flags), selectinload(Paragraph.chapter))
         .order_by(Chapter.order, Paragraph.order)
     )
+    return list(result.scalars().all())
+
+
+async def paragraph_labels(session: AsyncSession, project_id: int) -> dict[int, int]:
+    """Etiket numarası -> veritabanı id'si. Etiket = romandaki sıra (1'den başlar, bölümler boyunca devam eder)."""
+    return {i: p.id for i, p in enumerate(await _ordered_paragraphs(session, project_id), start=1)}
+
+
+async def _build_story_context(session: AsyncSession, project_id: int, with_ids: bool = False) -> str:
+    """
+    'Hikaye bağlamını ekle' işaretliyken tüm projedeki metni tek stringe indirger
+    (bölüm sırası -> paragraf sırası, bölüm başlıklarıyla).
+
+    - Çözülmüş flag'ler nihai halleriyle yazılır (örn. 'chidori' -> 'çakı' kabul
+      edildiyse 'çakı'), bekleyenler orijinal haliyle — DOCX export ile aynı mantık.
+    - with_ids=True (düzenleme izni açıkken): her paragraf [P<sıra>] etiketiyle başlar (P1, P2...),
+      böylece Editör hangi paragrafı değiştireceğini söyleyebilir. Eskiden veritabanı id'si
+      kullanılıyordu: 5 paragraflık romanda "P60" çıkıyor ve Nicole bunu yazara söylüyordu.
+      Etiket -> id çevirisi paragraph_labels() ile yapılır.
+    """
     blocks: list[str] = []
     last_chapter_id = None
-    for para in result.scalars().all():
+    for label, para in enumerate(await _ordered_paragraphs(session, project_id), start=1):
         if para.chapter_id != last_chapter_id:
             blocks.append(f"## Bölüm: {para.chapter.title}")
             last_chapter_id = para.chapter_id
         text = _resolved_text(para)
-        blocks.append(f"[P{para.id}] {text}" if with_ids else text)
+        blocks.append(f"[P{label}] {text}" if with_ids else text)
     return "\n\n".join(blocks)
 
 
@@ -86,7 +97,9 @@ async def _paragraph_flags(session: AsyncSession, paragraph_id: int) -> list[Fla
     return list(res.scalars().all())
 
 
-async def _apply_edits(session: AsyncSession, project_id: int, message_id: int, edits: list[dict]) -> list[EditLog]:
+async def _apply_edits(
+    session: AsyncSession, project_id: int, message_id: int, edits: list[dict], labels: dict[int, int] | None = None,
+) -> list[EditLog]:
     """
     Model'in döndürdüğü düzenlemeleri uygular. Güvenlik: sadece bu projeye ait
     paragraflara dokunulur; geçersiz/uydurma id'ler ve boş metinler sessizce atlanır.
@@ -97,6 +110,8 @@ async def _apply_edits(session: AsyncSession, project_id: int, message_id: int, 
     for item in edits[:MAX_EDITS_PER_MESSAGE]:
         action = item.get("action")
         pid = item.get("paragraph_id")
+        if labels is not None:  # model etiket numarası verir (P3 -> 3); gerçek id'ye çevir
+            pid = labels.get(pid) if isinstance(pid, int) else None
         new_text = (item.get("new_text") or "").strip()
         if action not in ("replace", "insert_after", "delete") or not isinstance(pid, int):
             continue
@@ -212,12 +227,14 @@ async def _prepare_turn(session: AsyncSession, project_id: int, payload: ChatMes
     # Düzenleme izni açıkken Editör paragraf id'lerini görmek zorunda — bağlam zorunlu eklenir.
     use_context = payload.include_context or payload.allow_edits
     context = await _build_story_context(session, project_id, with_ids=payload.allow_edits) if use_context else None
+    # Bağlamla AYNI anda alınır: Gemini cevap verirken paragraf eklenip silinse bile etiketler doğru eşleşir
+    labels = await paragraph_labels(session, project_id) if payload.allow_edits else None
 
     lore_result = await session.execute(
         select(LoreEntry.term).where(LoreEntry.project_id == project_id).order_by(LoreEntry.term)
     )
     lore_terms = [row[0] for row in lore_result.all()]
-    return history, user_msg, context, lore_terms
+    return history, user_msg, context, lore_terms, labels
 
 
 @router.post("/stream")
@@ -230,7 +247,7 @@ async def send_message_stream(project_id: int, payload: ChatMessageIn):
     """
     async def events():
         async with AsyncSessionLocal() as session:  # istek bitince kapanan Depends oturumu akışta kullanılamaz
-            history, user_msg, context, lore_terms = await _prepare_turn(session, project_id, payload)
+            history, user_msg, context, lore_terms, _labels = await _prepare_turn(session, project_id, payload)
             parts: list[str] = []
             error = None
             try:
@@ -267,7 +284,7 @@ async def send_message_stream(project_id: int, payload: ChatMessageIn):
 
 @router.post("", response_model=ChatMessageOut)
 async def send_message(project_id: int, payload: ChatMessageIn, session: AsyncSession = Depends(get_session)):
-    history, user_msg, context, lore_terms = await _prepare_turn(session, project_id, payload)
+    history, user_msg, context, lore_terms, labels = await _prepare_turn(session, project_id, payload)
 
     result = await gemini_service.chat_full(
         payload.content, context, history, allow_edits=payload.allow_edits, lore_terms=lore_terms,
@@ -289,7 +306,7 @@ async def send_message(project_id: int, payload: ChatMessageIn, session: AsyncSe
     applied: list[EditLog] = []
     if payload.allow_edits and result["edits"]:
         try:
-            applied = await _apply_edits(session, project_id, assistant_msg.id, result["edits"])
+            applied = await _apply_edits(session, project_id, assistant_msg.id, result["edits"], labels)
         except Exception:
             logger.exception("Editör düzenlemeleri uygulanırken hata")
             await session.rollback()

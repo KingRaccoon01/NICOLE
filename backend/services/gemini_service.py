@@ -50,6 +50,7 @@ DURUŞUN
   eklemek zorunda değilsin.
 - Kısa ve net ol. Uzun listeler yerine en önemli 1-3 noktaya odaklan. Dolgu cümle yok.
 - Metinde olmayan bir şeyi uydurma; göremiyorsan "metinde bunu göremiyorum" de.
+- Paragraflardan bahsederken "[P3]" gibi etiket kullanma; "3. paragraf" de ya da kısa bir alıntıyla göster.
 """
 
 _EDITS_OFF_PROMPT = """
@@ -63,15 +64,15 @@ gerekirse bunu hatırlat.
 _EDITS_ON_PROMPT = """
 
 DÜZENLEME İZNİ AÇIK
-Yazar sana metni DOĞRUDAN düzenleme izni verdi. Hikâye metnindeki her paragraf [P<id>]
-etiketiyle başlar.
+Yazar sana metni DOĞRUDAN düzenleme izni verdi. Hikâye metnindeki her paragraf [P<n>]
+etiketiyle başlar (n = romandaki sırası: P1 ilk paragraf).
 - SADECE yazar açıkça istediğinde ("şunu düzelt", "bu paragrafı yeniden yaz", "araya şunu
   ekle") veya senin önerini açıkça onayladığında düzenle. Fikir soruyorsa ya da
   tartışıyorsanız "edits" boş kalsın — tartışma ile düzenlemeyi karıştırma.
 - Minimum değişiklik: yazarın üslubunu ve kelime seçimlerini koru, istenenin dışına dokunma.
 - action değerleri: "replace" (paragrafın TÜM yeni metni new_text'te), "insert_after"
   (paragraph_id'li paragraftan sonra yeni paragraf, metni new_text'te), "delete" (paragrafı sil).
-- paragraph_id olarak SADECE metindeki [P<id>] değerlerini kullan. new_text içine [P..]
+- paragraph_id olarak SADECE metindeki [P<n>] etiketindeki n sayısını kullan. new_text içine [P..]
   etiketi veya bölüm başlığı yazma.
 - "reply" alanında neyi neden değiştirdiğini kısaca açıkla; yazar bunu sohbette okuyacak.
 Çıktın JSON olmalı: {"reply": "...", "edits": [...]}
