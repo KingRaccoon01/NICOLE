@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..database import (
     get_session, Project, Chapter, Paragraph, LoreEntry, LoreSource, FlaggedTerm, FlagStatus,
 )
-from ..schemas import LoreEntryCreate, LoreEntryOut
+from ..schemas import LoreEntryCreate, LoreEntryOut, LoreImportRequest
 from ..services.lore_detection import tr_lower
 from .flags import lore_has_term
 
@@ -41,6 +41,27 @@ async def add_lore_entry(project_id: int, payload: LoreEntryCreate, session: Asy
     await session.commit()
     await session.refresh(entry)
     return entry
+
+
+@router.post("/import")
+async def import_lore(project_id: int, payload: LoreImportRequest, session: AsyncSession = Depends(get_session)):
+    """Başka bir romanın sözlüğündeki, bu romanda OLMAYAN terimleri (tanımlarıyla) bu romana kopyalar."""
+    await _require_project(session, project_id)
+    if payload.from_project_id == project_id:
+        raise HTTPException(400, "Aynı roman seçildi")
+    await _require_project(session, payload.from_project_id)
+    mine = await session.execute(select(LoreEntry.term).where(LoreEntry.project_id == project_id))
+    have = {tr_lower(t) for t in mine.scalars()}
+    source = await session.execute(select(LoreEntry).where(LoreEntry.project_id == payload.from_project_id))
+    added = 0
+    for e in source.scalars().all():
+        if tr_lower(e.term) in have:
+            continue
+        session.add(LoreEntry(project_id=project_id, term=e.term, definition=e.definition, source=e.source))
+        have.add(tr_lower(e.term))
+        added += 1
+    await session.commit()
+    return {"ok": True, "added": added}
 
 
 @router.delete("/{entry_id}")

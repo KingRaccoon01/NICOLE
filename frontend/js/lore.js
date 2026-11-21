@@ -40,6 +40,34 @@ async function loadLore(query) {
   });
 }
 
+// --- Başka romandan terim alma ---
+async function fillLoreImportSelect() {
+  const select = document.getElementById("loreImportSelect");
+  const others = (await apiGet("/projects")).filter((p) => String(p.id) !== String(NicoleState.projectId));
+  select.innerHTML = "";
+  select.add(new Option(others.length ? "Başka romandan terim al…" : "Başka roman yok", ""));
+  others.forEach((p) => select.add(new Option(p.title, p.id)));
+  select.disabled = !others.length;
+  document.getElementById("loreImportBtn").disabled = !others.length;
+}
+
+document.getElementById("loreImportBtn").addEventListener("click", async () => {
+  const select = document.getElementById("loreImportSelect");
+  const status = document.getElementById("loreImportStatus");
+  if (!select.value) return;
+  try {
+    const res = await apiPost(loreUrl("/import"), { from_project_id: Number(select.value) });
+    status.textContent = res.added
+      ? `"${select.selectedOptions[0].textContent}" romanından ${res.added} terim eklendi.`
+      : "Yeni terim yok — hepsi zaten bu romanın sözlüğünde.";
+    loadLore();
+  } catch (err) {
+    status.textContent = `Terimler alınamadı: ${err.message}`;
+  }
+});
+
+fillLoreImportSelect();
+
 document.getElementById("loreSearch").addEventListener("input", (e) => {
   loadLore(e.target.value);
 });

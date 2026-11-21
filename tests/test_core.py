@@ -78,6 +78,33 @@ def test_chapters_rename_and_export_has_headings():
     assert client.post("/api/projects/999999/chapters", json={}).status_code == 404
 
 
+def test_lore_import_from_other_novel():
+    a, _ = _project("Kaynak")
+    b, _ = _project("Hedef")
+    for t in ("Rasengan", "Gaara"):
+        client.post(f"/api/projects/{a}/lore", json={"term": t, "definition": "tanım"})
+    client.post(f"/api/projects/{b}/lore", json={"term": "gaara"})
+    res = client.post(f"/api/projects/{b}/lore/import", json={"from_project_id": a}).json()
+    assert res["added"] == 1  # "gaara" zaten vardı (büyük/küçük harf farkı sayılmaz)
+    terms = {e["term"]: e["definition"] for e in client.get(f"/api/projects/{b}/lore").json()}
+    assert terms == {"Rasengan": "tanım", "gaara": None}
+    assert client.post(f"/api/projects/{b}/lore/import", json={"from_project_id": b}).status_code == 400
+
+
+def test_flag_engine_chosen_in_ui_overrides_env(monkeypatch):
+    from backend import config
+    from backend.services import gemini_service
+
+    async def fake_gemini(*_a, **_kw):
+        return '{"flags": [{"term": "çey", "suggestion": "çay"}]}'
+
+    monkeypatch.setattr(config, "FLAG_ENGINE", "ollama")
+    monkeypatch.setattr(config, "GEMINI_API_KEY", "test")
+    monkeypatch.setattr(gemini_service, "generate_json", fake_gemini)
+    got = asyncio.run(lore_detection.detect_flags("Bir bardak çey.", [], uncertain_words=["çey"], engine="gemini"))
+    assert got == [{"term": "çey", "suggestion": "çay"}]
+
+
 def test_no_cors_for_foreign_sites():
     res = client.get("/api/projects", headers={"Origin": "https://kotu-site.example"})
     assert "access-control-allow-origin" not in res.headers

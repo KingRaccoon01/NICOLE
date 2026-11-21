@@ -130,7 +130,9 @@ if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
 
 function connectDictationSocket(chapterId) {
   const protocol = location.protocol === "https:" ? "wss" : "ws";
-  Dictation.ws = new WebSocket(`${protocol}://${location.host}/ws/dictate/${chapterId}`);
+  const engine = NicoleSettings.get("flagEngine");
+  const query = engine ? `?flag_engine=${encodeURIComponent(engine)}` : "";
+  Dictation.ws = new WebSocket(`${protocol}://${location.host}/ws/dictate/${chapterId}${query}`);
 
   Dictation.ws.onopen = () => setConnStatus(true);
   Dictation.ws.onclose = () => setConnStatus(false);
@@ -308,6 +310,14 @@ attachHotkey({
 });
 
 // Kısayol tuşu / mod değişince boştaki durum yazısını güncelle
+// Flag motoru soket açılırken bildirilir — ayar değişince soketi yeni ayarla yeniden aç
+document.getElementById("flagEngineSelect")?.addEventListener("change", () => {
+  if (!Dictation.ws || !NicoleState.chapterId) return;
+  Dictation.ws.onclose = null;
+  Dictation.ws.close();
+  connectDictationSocket(NicoleState.chapterId);
+});
+
 bindKeyButton("dictationKeyBtn", "dictationKey", ["chatKey"], () => { if (!Dictation.recording) setIdleStatus(); });
 document.getElementById("dictationHold")?.addEventListener("change", () => { if (!Dictation.recording) setIdleStatus(); });
 

@@ -17,6 +17,7 @@ const NicoleSettings = (() => {
     dictationHold: false,   // true: basılı tut-konuş, false: bas-çek (aç/kapa)
     chatKey: "KeyN",        // Nicole Editör mikrofon tuşu
     chatHold: false,
+    flagEngine: "",         // Flag taraması: "" (.env), "ollama" | "gemini"
   };
   const data = { ...DEFAULTS };
 
@@ -228,3 +229,12 @@ bindSetting("autoSendVoice", "autoSendVoice");
 bindSetting("inputModeSelect", "inputMode");
 bindSetting("dictationHold", "dictationHold");
 bindSetting("chatHold", "chatHold");
+bindSetting("flagEngineSelect", "flagEngine");
+
+document.getElementById("settingsBtn")?.addEventListener("click", () =>
+  document.getElementById("settingsOverlay").classList.add("open"));
+document.getElementById("settingsCloseBtn")?.addEventListener("click", () =>
+  document.getElementById("settingsOverlay").classList.remove("open"));
+document.getElementById("settingsOverlay")?.addEventListener("click", (e) => {
+  if (e.target.id === "settingsOverlay") e.target.classList.remove("open");
+});

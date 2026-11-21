@@ -185,11 +185,13 @@ async def detect_flags(
     known_terms: list[str],
     uncertain_words: list[str] | None = None,
     context: str | None = None,
+    engine: str | None = None,
 ) -> list[dict]:
     """
     Dönüş: [{"term": "falız", "suggestion": "filiz"}, ...] — Ollama'ya ulaşılamazsa None.
     uncertain_words: Whisper'ın düşük eminlikle yazdığı kelimeler (stt_service.uncertain_words).
     context: aynı bölümün önceki metni — "en mantıklı kelime" ancak bağlamla bulunur.
+    engine: "ollama" | "gemini" (arayüzdeki ayar); None ise .env'deki FLAG_ENGINE.
 
     Lore terimleri modele "doğru yazımlar" olarak verilir (yanlış duyulmuş bir terime doğru
     yazımı önerebilsin diye). "Zaten sözlükte mi" elemesi yine Python tarafında, filter_flags
@@ -197,7 +199,7 @@ async def detect_flags(
     """
     user_prompt = _build_user_prompt(paragraph_text, known_terms, uncertain_words or [], context)
 
-    if config.FLAG_ENGINE == "gemini" and config.GEMINI_API_KEY:
+    if (engine or config.FLAG_ENGINE) == "gemini" and config.GEMINI_API_KEY:
         from . import gemini_service  # döngüsel import olmasın diye burada
         try:
             raw = await gemini_service.generate_json(_SYSTEM_PROMPT, user_prompt, config.FLAG_GEMINI_MODEL)

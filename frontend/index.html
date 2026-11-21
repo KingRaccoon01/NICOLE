@@ -19,6 +19,7 @@
       <span class="status-dot" id="connDot"></span><span id="connText">bağlanıyor...</span>
     </span>
     <button class="btn" id="exportBtn">⬇ DOCX</button>
+    <button class="btn" id="settingsBtn" title="Ayarlar">⚙ Ayarlar</button>
     <a href="debug.html" class="btn" style="text-decoration:none; color:var(--gold);" title="Geçici debug paneli">🛠 Debug</a>
     <button class="btn btn-primary" id="projectsBtn">☰ Romanlar</button>
   </div>
@@ -68,14 +69,6 @@
       </select>
       <button class="btn" id="refreshAudioBtn" title="Mikrofon listesini yenile (yeni bağlanan Bluetooth kulaklık gibi)">🔄</button>
     </div>
-    <div class="hotkey-bar">
-      <span class="hotkey-label">Kayıt tuşu</span>
-      <button class="key-btn" id="dictationKeyBtn" title="Tuşu değiştirmek için tıkla, sonra yeni tuşa bas (Esc: iptal)">Space</button>
-      <label class="hotkey-hold" for="dictationHold">
-        <input type="checkbox" id="dictationHold" />
-        Basılı tutarak kaydet (bırakınca durur)
-      </label>
-    </div>
   </section>
 
   <!-- SAĞ PANEL: EDİTÖR SOHBETİ + LORE SÖZLÜĞÜ -->
@@ -112,16 +105,6 @@
         <input type="checkbox" id="allowEdits" />
         <label for="allowEdits" title="Açıkken Nicole, isteğin üzerine paragrafları doğrudan değiştirebilir, ekleyebilir veya silebilir. Her mesajdaki değişiklik 'Geri al' ile geri alınabilir.">Nicole'ye metni doğrudan düzenleme izni ver</label>
       </div>
-      <div class="context-toggle" style="margin-top:4px;">
-        <input type="checkbox" id="autoSendVoice" />
-        <label for="autoSendVoice">Sesle konuşunca direkt gönder</label>
-      </div>
-      <div class="context-toggle hotkey-row" style="margin-top:4px;">
-        <span class="hotkey-label">Mikrofon tuşu</span>
-        <button class="key-btn" id="chatKeyBtn" title="Tuşu değiştirmek için tıkla, sonra yeni tuşa bas (Esc: iptal)">N</button>
-        <input type="checkbox" id="chatHold" />
-        <label for="chatHold">Basılı tutarak konuş (bırakınca durur)</label>
-      </div>
     </div>
 
     <div class="side-tab-content thin-scroll" id="tab-lore">
@@ -130,6 +113,11 @@
         <input type="text" id="newLoreTerm" placeholder="Yeni terim" class="lore-search" style="margin-bottom:0;" />
         <button class="btn btn-primary" id="addLoreBtn">Ekle</button>
       </div>
+      <div class="lore-import-row">
+        <select class="control-select" id="loreImportSelect" title="Başka bir romanın sözlüğü"></select>
+        <button class="btn" id="loreImportBtn">Terimleri al</button>
+      </div>
+      <div id="loreImportStatus" class="lore-import-status"></div>
       <div id="loreList"></div>
     </div>
   </section>
@@ -204,6 +192,46 @@
     <div class="modal-actions" style="flex-direction:row; padding-top:0;">
       <button class="btn" id="deleteLoreCancelBtn" style="flex:1;">İptal</button>
       <button class="btn btn-primary" id="deleteLoreConfirmBtn" style="flex:1; background:var(--vermil); border-color:var(--vermil); color:white;">Sil</button>
+    </div>
+  </div>
+</div>
+
+<!-- AYARLAR -->
+<div class="modal-overlay" id="settingsOverlay">
+  <div class="modal settings-modal">
+    <div class="modal-header">
+      <span class="title">⚙ AYARLAR</span>
+      <button class="close-btn" id="settingsCloseBtn">✕</button>
+    </div>
+    <div class="settings-body">
+      <div class="settings-section">Dikte</div>
+      <div class="settings-row">
+        <span class="hotkey-label">Kayıt tuşu</span>
+        <button class="key-btn" id="dictationKeyBtn" title="Tuşu değiştirmek için tıkla, sonra yeni tuşa bas (Esc: iptal)">Space</button>
+      </div>
+      <label class="settings-row hotkey-hold" for="dictationHold">
+        <input type="checkbox" id="dictationHold" /> Basılı tutarak kaydet (bırakınca durur)
+      </label>
+      <div class="settings-row">
+        <span class="hotkey-label">Flag taraması</span>
+        <select class="control-select" id="flagEngineSelect">
+          <option value="">Varsayılan (.env ayarı)</option>
+          <option value="ollama">Ollama — yerel, internetsiz</option>
+          <option value="gemini">Gemini — daha isabetli (hata olursa Ollama)</option>
+        </select>
+      </div>
+
+      <div class="settings-section">Nicole Editör</div>
+      <div class="settings-row">
+        <span class="hotkey-label">Mikrofon tuşu</span>
+        <button class="key-btn" id="chatKeyBtn" title="Tuşu değiştirmek için tıkla, sonra yeni tuşa bas (Esc: iptal)">N</button>
+      </div>
+      <label class="settings-row hotkey-hold" for="chatHold">
+        <input type="checkbox" id="chatHold" /> Basılı tutarak konuş (bırakınca durur)
+      </label>
+      <label class="settings-row hotkey-hold" for="autoSendVoice">
+        <input type="checkbox" id="autoSendVoice" /> Sesle konuşunca direkt gönder
+      </label>
     </div>
   </div>
 </div>

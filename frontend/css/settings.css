@@ -5,6 +5,13 @@
   font-size: 12px; color: var(--paper-dim);
 }
 .hotkey-row { flex-wrap: wrap; }
+.settings-body { padding: 8px 18px 18px; display: flex; flex-direction: column; gap: 10px; font-size: 13px; }
+.settings-section { color: var(--gold); font-size: 12px; letter-spacing: 0.08em; margin-top: 8px; text-transform: uppercase; }
+.settings-row { display: flex; align-items: center; gap: 10px; white-space: nowrap; }
+.settings-row .control-select { flex: 1; }
+.lore-import-row { display: flex; gap: 8px; margin-bottom: 6px; }
+.lore-import-row .control-select { flex: 1; min-width: 0; }
+.lore-import-status { font-size: 12px; color: var(--paper-dim); margin-bottom: 10px; min-height: 1em; }
 .hotkey-label { color: var(--paper-dim); }
 .hotkey-hold { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
 

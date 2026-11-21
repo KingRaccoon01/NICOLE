@@ -80,8 +80,9 @@ def _parse_control_message(raw_msg: str) -> tuple[bool, int | None]:
 
 
 @router.websocket("/ws/dictate/{chapter_id}")
-async def dictate(websocket: WebSocket, chapter_id: int):
+async def dictate(websocket: WebSocket, chapter_id: int, flag_engine: str | None = None):
     await websocket.accept()
+    flag_engine = flag_engine if flag_engine in ("ollama", "gemini") else None  # None -> .env ayarı
     audio_buffer = bytearray()
 
     try:
@@ -127,6 +128,7 @@ async def dictate(websocket: WebSocket, chapter_id: int):
                     try:
                         paragraph_payload = await _save_paragraph_and_scan(
                             chapter_id, text, append_to=append_to, uncertain_words=uncertain,
+                            flag_engine=flag_engine,
                         )
                         await websocket.send_text(json.dumps({"type": "paragraph", "data": paragraph_payload}))
                     except Exception as exc:
@@ -152,6 +154,7 @@ async def _previous_text(session, chapter_id: int, before_order: int) -> str:
 
 async def _save_paragraph_and_scan(
     chapter_id: int, text: str, append_to: int | None = None, uncertain_words: list[str] | None = None,
+    flag_engine: str | None = None,
 ) -> dict:
     """
     append_to verilmişse ve geçerliyse (aynı bölüme ait bir paragrafsa), yeni
@@ -195,7 +198,9 @@ async def _save_paragraph_and_scan(
         # zaten flag'lenmiş/çözülmüş kısımlar tekrar taranıp gereksiz yere
         # yeniden işaretlenmesin. search_text/offset de aynı nedenle "text"
         # üzerinde arama yapıp gerçek pozisyonu (offset ile) hesaplar.
-        detected = await detect_flags(text, known_terms, uncertain_words=uncertain_words, context=context)
+        detected = await detect_flags(
+            text, known_terms, uncertain_words=uncertain_words, context=context, engine=flag_engine,
+        )
         warning = None
         if detected is None:  # Ollama'ya ulaşılamadı — sessizce "flag yok" gibi görünmesin
             warning = "Ollama'ya ulaşılamadı — bu metinde flag taraması YAPILMADI (Ollama açık mı?)"

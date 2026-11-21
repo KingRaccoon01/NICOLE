@@ -80,6 +80,10 @@ class LoreEntryCreate(BaseModel):
     definition: str | None = None
 
 
+class LoreImportRequest(BaseModel):
+    from_project_id: int
+
+
 class LoreEntryOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
