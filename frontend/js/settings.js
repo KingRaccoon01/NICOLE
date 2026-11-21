@@ -239,10 +239,10 @@ document.getElementById("settingsBtn")?.addEventListener("click", () => {
 });
 
 // --- Durum noktaları + eşik kaydırıcısı ---
-function statusRow(ok, name, text) {
+function statusRow(ok, name, text) {  // ok: true | false | "wait"
   const row = document.createElement("div");
   row.className = "status-item";
-  row.innerHTML = `<span class="dot ${ok ? "ok" : "bad"}"></span><b>${name}</b><span>${escapeHtml(text)}</span>`;
+  row.innerHTML = `<span class="dot ${ok === "wait" ? "wait" : ok ? "ok" : "bad"}"></span><b>${name}</b><span>${escapeHtml(text)}</span>`;
   return row;
 }
 
@@ -258,7 +258,7 @@ async function refreshStatus() {
   list.innerHTML = "";
   const w = s.whisper;
   list.append(
-    statusRow(w.ok, "Whisper", w.ok ? `${w.size} · ${w.device === "cuda" ? "GPU" : "CPU"}` : `${w.size} · ilk kayıtta yüklenecek`),
+    statusRow(w.ok || "wait", "Whisper", w.ok ? `${w.size} · ${w.device === "cuda" ? "GPU" : "CPU"}` : `${w.size} · ilk kayıtta yüklenecek`),
     statusRow(s.ollama.ok, "Ollama", s.ollama.note),
     statusRow(s.gemini.ok, "Gemini", s.gemini.ok ? s.gemini.model : "API anahtarı yok (.env → GEMINI_API_KEY)"),
   );
