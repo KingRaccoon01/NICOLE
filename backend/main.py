@@ -35,6 +35,15 @@ async def on_startup():
     if config.WHISPER_PRELOAD:
         # Whisper'ı arka planda yükle: sunucu hemen açılır, ilk konuşmada bekleme olmaz.
         app.state.whisper_preload = asyncio.create_task(stt_service.preload_model())
+    # Doğal ses listesini önceden çek: Ayarlar açıldığında liste beklemeden hazır olsun
+    app.state.voices_preload = asyncio.create_task(_preload_voices())
+
+
+async def _preload_voices():
+    try:
+        await tts.voices()
+    except Exception as exc:  # internet yoksa sorun değil; ilk istekte tekrar denenir
+        logging.getLogger("nicole.tts").info("Ses listesi önceden alınamadı: %s", exc)
 
 
 # --- API router'ları ---

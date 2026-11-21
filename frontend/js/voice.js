@@ -206,17 +206,26 @@ function fillVoiceSelect() {
   if (!select.value && select.options.length) select.selectedIndex = 0;
   document.getElementById("ttsHint").textContent = NicoleVoice.serverVoices.length
     ? "☁ sesler her tarayıcıda çalışır; internet yoksa otomatik olarak tarayıcının sesine geçilir."
-    : "Doğal sesler alınamadı (internet yok mu?) — tarayıcının sesi kullanılacak.";
+    : NicoleVoice.serverVoicesLoading
+      ? "☁ Doğal sesler yükleniyor…"
+      : "Doğal sesler alınamadı (internet yok mu?) — tarayıcının sesi kullanılacak. Ayarlar her açıldığında tekrar denenir.";
 }
 
-(async function loadVoices() {
+// Liste sunucudan gelir (sunucu açılışta Microsoft'tan önceden çeker). Gelmezse Ayarlar her açıldığında tekrar denenir.
+async function loadVoices() {
+  if (NicoleVoice.serverVoices.length || NicoleVoice.serverVoicesLoading) return;
+  NicoleVoice.serverVoicesLoading = true;
+  fillVoiceSelect();
   try {
     const data = await apiGet("/tts/voices");
     NicoleVoice.serverVoices = data.voices;
     NicoleVoice.defaultServerVoice = data.default;
   } catch (_) { /* internet yoksa sadece tarayıcı sesleri */ }
+  NicoleVoice.serverVoicesLoading = false;
   fillVoiceSelect();
-})();
+}
+loadVoices();
+document.getElementById("settingsBtn")?.addEventListener("click", loadVoices);
 if (window.speechSynthesis) speechSynthesis.addEventListener?.("voiceschanged", fillVoiceSelect);
 
 bindSetting("ttsEnabled", "ttsEnabled");
