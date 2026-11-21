@@ -127,6 +127,10 @@ async function streamChatReply(body, thinking) {
   let final = null;
   if (speak) NicoleVoice.begin();
 
+  // Beklerken açıklama: sunucudan "Google yoğun..." gelirse onu, 10 sn'de cevap başlamazsa genel bir not göster
+  const setWaiting = (note) => { if (!bubble) thinking.firstChild.textContent = `Nicole düşünüyor… (${note})`; };
+  const slowTimer = setTimeout(() => setWaiting("Google yavaş cevap veriyor, bekleniyor"), 10000);
+
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
@@ -140,7 +144,10 @@ async function streamChatReply(body, thinking) {
       buffer = buffer.slice(nl + 1);
       if (!line) continue;
       const event = JSON.parse(line);
-      if (event.delta) {
+      if (event.status) {
+        setWaiting(event.status);
+      } else if (event.delta) {
+        clearTimeout(slowTimer);
         if (!bubble) {
           thinking.remove();
           bubble = renderChatMessage(live);
@@ -155,6 +162,7 @@ async function streamChatReply(body, thinking) {
       }
     }
   }
+  clearTimeout(slowTimer);
   if (!final) throw new Error("cevap yarıda kesildi");
   thinking.remove();
   if (final.id === 0) {

@@ -4,6 +4,7 @@ Nicole — Ana uygulama giriş noktası
 """
 import asyncio
 import logging
+from contextlib import asynccontextmanager
 
 import httpx
 
@@ -14,7 +15,8 @@ from pathlib import Path
 from . import config
 from .database import init_db
 from .services import stt_service
-from .routers import projects, chapters, flags, lore, chat, export, dictation_ws, debug, transcribe, tts  # noqa: debug -> GEÇİCİ, proje bitince silinecek
+from . import diagnostics
+from .routers import projects, chapters, flags, lore, chat, export, dictation_ws, transcribe, tts
 
 # Python'ın varsayılan log seviyesi WARNING'dir — bu yüzden Ollama/Whisper/Gemini
 # servislerindeki logger.info(...)/logger.warning(...) çağrıları (örn. "Ollama flag
@@ -23,20 +25,21 @@ from .routers import projects, chapters, flags, lore, chat, export, dictation_ws
 # "neden flag olmadı" gibi sorularda VSCode terminaline bakman artık işe yarayacak.
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
-app = FastAPI(title=config.APP_NAME)
-
-# CORS bilerek YOK: ön yüz aynı adresten sunuluyor. "*" açıkken tarayıcıda açık olan
-# herhangi bir site localhost'taki romanları okuyup silebiliyordu.
-
-
-@app.on_event("startup")
-async def on_startup():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     await init_db()
     if config.WHISPER_PRELOAD:
         # Whisper'ı arka planda yükle: sunucu hemen açılır, ilk konuşmada bekleme olmaz.
         app.state.whisper_preload = asyncio.create_task(stt_service.preload_model())
     # Doğal ses listesini önceden çek: Ayarlar açıldığında liste beklemeden hazır olsun
     app.state.voices_preload = asyncio.create_task(_preload_voices())
+    yield
+
+
+app = FastAPI(title=config.APP_NAME, lifespan=lifespan)
+
+# CORS bilerek YOK: ön yüz aynı adresten sunuluyor. "*" açıkken tarayıcıda açık olan
+# herhangi bir site localhost'taki romanları okuyup silebiliyordu.
 
 
 async def _preload_voices():
@@ -54,7 +57,7 @@ app.include_router(lore.router)
 app.include_router(chat.router)
 app.include_router(export.router)
 app.include_router(dictation_ws.router)
-app.include_router(debug.router)  # GEÇİCİ — proje bitince bu satırı ve backend/routers/debug.py'yi sil
+app.include_router(diagnostics.router)
 app.include_router(transcribe.router)
 app.include_router(tts.router)
 

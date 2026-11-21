@@ -284,7 +284,9 @@ async def chat_stream(
     fast: bool = False,
 ):
     """
-    Cevabı Gemini yazdıkça parça parça verir (async generator). Böylece ekran cevabı akarak gösterir
+    Cevabı Gemini yazdıkça parça parça verir (async generator): ("delta", metin) ya da ("status", açıklama).
+    "status": Google yoğun olduğu için yeniden deneme / yedek modele geçiş — ekranda neden beklendiği görünür.
+    Böylece ekran cevabı akarak gösterir
     ve sesli okuma ilk cümleden başlar — kalite aynı: aynı model, aynı istek, sadece beklemeden okunuyor.
     Model seçimi/yedek kuralları chat_full ile aynı. Hiç cevap alınamazsa GeminiError fırlatır.
     (Düzenleme izni açıkken cevap JSON olduğu için bu yol kullanılmaz; chat_full kullanılır.)
@@ -294,6 +296,8 @@ async def chat_stream(
     body = _build_body(message, story_context, history, False, lore_terms)
     errors: list[tuple[str, int, str]] = []
     for model in _model_chain(config.GEMINI_FAST_MODEL if fast else None):
+        if errors:
+            yield ("status", f"{errors[-1][0]} cevap veremedi — {model} deneniyor")
         url = _model_url(model).replace(":generateContent", ":streamGenerateContent") + "?alt=sse"
         for attempt in range(1, _SERVER_TRIES_PER_MODEL + 1):
             started = False
@@ -306,7 +310,7 @@ async def chat_stream(
                         async for line in resp.aiter_lines():
                             for text in _stream_parts(line):
                                 started = True
-                                yield text
+                                yield ("delta", text)
                 if started:
                     if errors:
                         logger.warning("Gemini: yedek model '%s' kullanıldı (%s).", model, errors)
@@ -317,6 +321,7 @@ async def chat_stream(
                 status, msg = _http_error_info(exc)
                 logger.error("Gemini API hatası (model=%s, HTTP %s): %s", model, status, msg)
                 if status in _SERVER_ERROR_CODES and attempt < _SERVER_TRIES_PER_MODEL:
+                    yield ("status", "Google şu an yoğun — tekrar deneniyor")
                     await asyncio.sleep(_RETRY_DELAY_SECONDS)
                     continue
                 errors.append((model, status, msg))
@@ -389,8 +394,7 @@ async def chat_full(
             f"Gemini API'ye ulaşılamadı ({type(exc).__name__}: {detail}). Kontrol et: "
             "1) .env dosyası proje kökünde mi ve GEMINI_API_KEY dolu mu, 2) sunucuyu .env'i "
             "düzenledikten sonra yeniden başlattın mı, 3) internet/VPN/antivirüs/güvenlik duvarı "
-            "generativelanguage.googleapis.com'u engelliyor mu — debug panelindeki 'Genel İnternet' "
-            "testiyle bunu ayırt edebilirsin."
+            "generativelanguage.googleapis.com'u engelliyor mu."
         )
 
     if data is None:

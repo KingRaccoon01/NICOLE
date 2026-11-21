@@ -119,8 +119,8 @@ def test_status_and_uncertain_threshold_override():
 
 
 def test_client_errors_are_recorded():
-    client.post("/api/debug/client-error", json={"message": "TypeError: x is undefined", "page": "/index.html"})
-    assert any("TypeError" in e["message"] for e in client.get("/api/debug/recent-errors").json())
+    client.post("/api/diag/client-error", json={"message": "TypeError: x is undefined", "page": "/index.html"})
+    assert any("TypeError" in e["message"] for e in client.get("/api/diag/errors").json())
 
 
 def test_accept_suggestion_does_not_pollute_lore_and_reopen():
@@ -289,13 +289,15 @@ def test_chat_stream_ndjson_and_error_path(monkeypatch):
     from backend.services import gemini_service as g
 
     async def fake_stream(*_a, **_kw):
+        yield ("status", "Google şu an yoğun — tekrar deneniyor")
         for part in ["Selam. ", "Bence sahne ", "güçlü."]:
-            yield part
+            yield ("delta", part)
 
     monkeypatch.setattr(g, "chat_stream", fake_stream)
     pid, _ = _project()
     lines = [json.loads(l) for l in client.post(f"/api/projects/{pid}/chat/stream", json={"content": "merhaba"}).text.splitlines()]
-    assert [l["delta"] for l in lines[:-1]] == ["Selam. ", "Bence sahne ", "güçlü."]
+    assert lines[0] == {"status": "Google şu an yoğun — tekrar deneniyor"}
+    assert [l["delta"] for l in lines[1:-1]] == ["Selam. ", "Bence sahne ", "güçlü."]
     assert lines[-1]["done"] and lines[-1]["message"]["content"] == "Selam. Bence sahne güçlü."
     assert [m["role"] for m in client.get(f"/api/projects/{pid}/chat").json()] == ["user", "assistant"]
 
@@ -361,6 +363,46 @@ def test_tts_job_streams_and_replays(monkeypatch):
     assert client.get(url).content == b"AABBCC"  # tarayıcı tekrar isterse yeniden üretmeden verilir
     bad = client.post("/api/tts", json={"text": "Merhaba", "voice": "bozuk"}).json()["url"]
     assert client.get(bad).status_code == 502
+
+
+def test_stream_reports_busy_and_fallback(monkeypatch):
+    import httpx
+    from backend import config
+    from backend.services import gemini_service as g
+
+    class FakeResp:
+        def __init__(self, status, lines=()):
+            self.status_code, self._lines = status, lines
+            self.request = httpx.Request("POST", "http://x")
+        async def aread(self): return b""
+        def raise_for_status(self):
+            raise httpx.HTTPStatusError("x", request=self.request, response=httpx.Response(self.status_code, json={"error": {"message": "yoğun"}}, request=self.request))
+        async def aiter_lines(self):
+            for l in self._lines:
+                yield l
+        async def __aenter__(self): return self
+        async def __aexit__(self, *a): return False
+
+    class FakeClient:
+        async def __aenter__(self): return self
+        async def __aexit__(self, *a): return False
+        def stream(self, method, url, **kw):
+            if "ana" in url:
+                return FakeResp(503)
+            return FakeResp(200, ['data: {"candidates":[{"content":{"parts":[{"text":"Selam"}]}}]}'])
+
+    monkeypatch.setattr(g, "new_client", lambda timeout=0: FakeClient())
+    monkeypatch.setattr(g, "_RETRY_DELAY_SECONDS", 0)
+    monkeypatch.setattr(config, "GEMINI_API_KEY", "test")
+    monkeypatch.setattr(config, "GEMINI_MODEL", "ana")
+    monkeypatch.setattr(config, "GEMINI_FALLBACK_MODELS", ["yedek"])
+
+    async def collect():
+        return [e async for e in g.chat_stream("selam", None, [])]
+
+    events = asyncio.run(collect())
+    assert events == [("status", "Google şu an yoğun — tekrar deneniyor"),
+                      ("status", "ana cevap veremedi — yedek deneniyor"), ("delta", "Selam")]
 
 
 def test_no_cors_for_foreign_sites():
@@ -479,3 +521,40 @@ def test_gemini_flag_failure_falls_back_to_ollama(monkeypatch):
     monkeypatch.setattr(lore_detection.httpx, "AsyncClient", FakeOllama)
     got = asyncio.run(lore_detection.detect_flags("Bir bardak çey içtim.", [], uncertain_words=["çey"]))
     assert got == [{"term": "çey", "suggestion": "çay"}]
+
+
+def test_old_shared_lore_migrates_to_every_novel():
+    """Eski veritabanı (tüm romanlara ortak sözlük) açılışta roman başına sözlüğe çevrilir, veri kaybolmaz."""
+    import pathlib
+    import sqlite3
+    from sqlalchemy.ext.asyncio import create_async_engine
+    from backend.database import Base, migrate_lore_per_project
+
+    path = pathlib.Path(tempfile.mkdtemp()) / "eski.db"
+    raw = sqlite3.connect(path)
+    raw.executescript("""
+        CREATE TABLE projects (id INTEGER PRIMARY KEY, title VARCHAR(200), created_at DATETIME, updated_at DATETIME);
+        INSERT INTO projects (id, title) VALUES (1, 'Roman 1'), (2, 'Roman 2');
+        CREATE TABLE lore_entries (id INTEGER PRIMARY KEY, term VARCHAR(200) NOT NULL, definition TEXT,
+            source VARCHAR(6) NOT NULL, created_at DATETIME NOT NULL, UNIQUE (term));
+        INSERT INTO lore_entries (term, definition, source, created_at) VALUES
+          ('Rasengan', 'bir teknik', 'manual', '2026-01-01'), ('Gaara', NULL, 'auto', '2026-01-02');
+    """)
+    raw.commit()
+    raw.close()
+
+    async def run():
+        eng = create_async_engine(f"sqlite+aiosqlite:///{path}")
+        async with eng.begin() as conn:
+            first = await migrate_lore_per_project(conn, path)
+            await conn.run_sync(Base.metadata.create_all)
+        async with eng.begin() as conn:
+            second = await migrate_lore_per_project(conn, path)
+        await eng.dispose()
+        return first, second
+
+    first, second = asyncio.run(run())
+    assert first is True and second is False  # ikinci açılışta tekrar çalışmaz
+    assert (path.parent / "eski.db.bak-lore-per-project").exists()  # geçiş öncesi yedek alındı
+    rows = sqlite3.connect(path).execute("SELECT project_id, term, definition FROM lore_entries ORDER BY project_id, term").fetchall()
+    assert rows == [(1, "Gaara", None), (1, "Rasengan", "bir teknik"), (2, "Gaara", None), (2, "Rasengan", "bir teknik")]

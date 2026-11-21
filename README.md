@@ -75,8 +75,8 @@ oluştur, içine girince dikte/yazma ekranı açılır.
 
 - Whisper modeli ilk kullanımda bir kez indirilir (`WHISPER_MODEL_SIZE`'a göre ~150 MB – 3 GB),
   sonra internetsiz çalışır.
-- **⚙ Ayarlar** panelinin üstünde Whisper / Ollama / Gemini'nin durumu görünür. Daha ayrıntılı
-  teşhis için panelin altındaki **🛠 Sorun giderme** linki bağlantıları tek tek test eder.
+- Bir şey çalışmıyorsa **⚙ Ayarlar** panelinin üstüne bak: Whisper / Ollama / Gemini'nin durumu
+  orada yeşil/sarı/kırmızı noktalarla görünür.
 
 ## 4. Kullanım
 
@@ -124,10 +124,14 @@ oluştur, içine girince dikte/yazma ekranı açılır.
 
 ## 6. Gizlilik
 
-- Whisper ve Ollama tamamen senin bilgisayarında çalışır.
+- Whisper (sesi yazıya dökme) ve Ollama tamamen senin bilgisayarında çalışır.
 - **Nicole Editör** ve `FLAG_ENGINE=gemini` seçiliyse metnin Google'a (Gemini API) gönderilir.
   Editörde "hikâye bağlamı" kutusu açıkken romanın tamamı gider; kapatabilirsin.
   Ücretsiz Gemini katmanında Google gönderilen içeriği ürünlerini geliştirmek için kullanabilir.
+- **Sesli okuma** açıkken Nicole'nin cevapları seslendirilmek için **Microsoft'a** gönderilir
+  (☁ doğal sesler, Edge tarayıcısının "Sesli oku" servisi). İstemezsen Ayarlar'dan 💻 bir tarayıcı
+  sesi seç ya da sesli okumayı kapat. Bu servis resmi bir API değildir; Microsoft kapatırsa Nicole
+  otomatik olarak tarayıcının kendi sesine geçer.
 
 ## 7. Yedekler
 
@@ -162,14 +166,12 @@ nicole/
 │   │   ├── export.py        # Word (.docx) dışa aktarım
 │   │   ├── transcribe.py    # Sohbet için sesle mesaj yazma
 │   │   ├── dictation_ws.py  # Canlı dikte WebSocket'i
-│   │   └── debug/           # Debug paneli testleri
 │   └── services/
 │       ├── stt_service.py       # faster-whisper (+ kelime eminliği)
 │       ├── lore_detection.py    # Flag taraması (Ollama / Gemini)
 │       ├── gemini_service.py    # Gemini API
 │       ├── http_client.py       # Ağ sorunlarına dayanıklı HTTP istemcisi
-│       ├── lore_recovery.py     # Kaybolan Lore terimlerini kurtarma
 │       └── docx_export.py       # Word çıktısı
-├── frontend/                # index.html (yazma ekranı), projects.html (romanlar), debug.html
+├── frontend/                # index.html (yazma ekranı), projects.html (romanlar)
 └── tests/                   # pytest testleri
 ```

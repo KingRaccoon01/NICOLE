@@ -27,7 +27,7 @@ from ..database import AsyncSessionLocal, Chapter, Paragraph, LoreEntry, next_or
 from ..services.stt_service import transcribe_audio_chunk, numbers_to_words
 from ..services.lore_detection import detect_flags, tr_lower
 from .flags import create_flags_for_paragraph
-from .debug import record_error  # GEÇİCİ — proje bitince debug.py silinince bu satır da silinmeli
+from ..diagnostics import record_error
 
 logger = logging.getLogger("nicole.dictation_ws")
 router = APIRouter()

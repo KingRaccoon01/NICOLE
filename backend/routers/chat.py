@@ -242,6 +242,7 @@ async def send_message_stream(project_id: int, payload: ChatMessageIn):
     """
     Düzenleme izni KAPALIYKEN kullanılan akışlı sohbet: her satır bir JSON (NDJSON).
       {"delta": "..."}                      — Gemini yazdıkça gelen metin parçası
+      {"status": "..."}                     — beklerken açıklama (Google yoğun, yedek model deneniyor...)
       {"done": true, "message": {...}}      — son: kaydedilmiş mesaj (hata ise id=0 ve "⚠ ..." metni)
     Ekran cevabı akarak gösterir, sesli okuma ilk cümleden başlar.
     """
@@ -251,11 +252,12 @@ async def send_message_stream(project_id: int, payload: ChatMessageIn):
             parts: list[str] = []
             error = None
             try:
-                async for delta in gemini_service.chat_stream(
+                async for kind, value in gemini_service.chat_stream(
                     payload.content, context, history, lore_terms=lore_terms, fast=payload.fast,
                 ):
-                    parts.append(delta)
-                    yield json.dumps({"delta": delta}, ensure_ascii=False) + "\n"
+                    if kind == "delta":
+                        parts.append(value)
+                    yield json.dumps({kind: value}, ensure_ascii=False) + "\n"
             except gemini_service.GeminiError as exc:
                 error = str(exc)
             except Exception as exc:

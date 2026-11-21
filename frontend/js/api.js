@@ -1,10 +1,10 @@
 // Nicole — API yardımcı katmanı
 const API_BASE = "/api";
 
-// Tarayıcıdaki JS hataları sessiz kalmasın: sunucuya bildirilir, Debug > "Son hatalar"da görünür.
+// Tarayıcıdaki JS hataları sessiz kalmasın: sunucuya bildirilir (/api/diag/errors'ta görünür).
 function reportClientError(message) {
   try {
-    navigator.sendBeacon?.(`${API_BASE}/debug/client-error`,
+    navigator.sendBeacon?.(`${API_BASE}/diag/client-error`,
       new Blob([JSON.stringify({ message: String(message).slice(0, 500), page: location.pathname })], { type: "application/json" }));
   } catch (_) { /* bildirim de başarısızsa yapacak bir şey yok */ }
 }
