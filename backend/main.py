@@ -84,7 +84,7 @@ async def status():
         "whisper": {"ok": stt_service.is_model_loaded(), "device": stt_service.current_device(),
                     "size": config.WHISPER_MODEL_SIZE},
         "ollama": {"ok": ollama_ok, "note": ollama_note},
-        "gemini": {"ok": bool(config.GEMINI_API_KEY), "model": config.GEMINI_MODEL},
+        "gemini": {"ok": bool(config.GEMINI_API_KEY), "model": config.GEMINI_MODEL, "fast_model": config.GEMINI_FAST_MODEL},
         "flag_engine": config.FLAG_ENGINE,
         "uncertain_prob": stt_service.UNCERTAIN_WORD_PROB,
     }

@@ -19,6 +19,23 @@ Detaylı proje planı: `nicole_proje_plani.md`
 
 ## 2. Kurulum
 
+### Kolay yol (Windows)
+
+1. GitHub'da yeşil **Code → Download ZIP** ile projeyi indir ve bir klasöre çıkar.
+2. Klasördeki **`Kurulum.bat`** dosyasına çift tıkla (yönetici olarak çalıştırmak gerekmez).
+   Sırayla şunları yapar, zaten yapılmış olanları atlar:
+   - Python 3.11 yoksa kurar,
+   - Ollama yoksa kurar ve `llama3.2:3b` modelini indirir,
+   - gerekli Python paketlerini kurar,
+   - NVIDIA ekran kartı varsa Whisper'ı hızlandıracak kütüphaneleri kurar ve onu kullanacak şekilde ayarlar,
+   - Gemini API anahtarını sorar (tarayıcıda anahtar sayfasını açar) ve `.env` dosyasını oluşturur,
+   - masaüstüne **Nicole** kısayolu ekler.
+3. Bittikten sonra masaüstündeki **Nicole** kısayoluyla aç.
+
+İlk kurulum internet hızına göre 10–30 dakika sürebilir (model ve paket indirmeleri ~3–5 GB).
+
+### Elle kurulum
+
 ```bash
 # 1) Sanal ortam
 python -m venv venv
@@ -70,7 +87,9 @@ oluştur, içine girince dikte/yazma ekranı açılır.
 - **⬇ DOCX:** Romanın tamamını tek bir Word dosyası olarak indirir (birden fazla bölüm varsa bölüm
   başlıklarıyla). Çözülmemiş flag varsa önce sorar.
 - **Lore Sözlüğü:** Terim ekleyip silebilir, başka bir romanın terimlerini tek tıkla alabilirsin.
-- **⚙ Ayarlar:** Kısayol tuşları, flag taraması motoru (Ollama/Gemini) ve "emin olmama eşiği".
+- **⚙ Ayarlar:** Kısayol tuşları, flag taraması motoru (Ollama/Gemini), "emin olmama eşiği" ve sesli okuma.
+- **🔊 Sesli okuma:** Nicole Editör cevaplarını sesli okuyabilir (Ayarlar'dan aç). Doğal sesler (ör. Emel)
+  sunucuda üretilir, her tarayıcıda çalışır ve internet ister; internet yoksa tarayıcının kendi sesine geçilir.
 - **Nicole Editör:** Hikâyen hakkında konuşabileceğin AI editör. "Metni doğrudan düzenleme izni"
   açıkken metinde değişiklik yapabilir; her değişiklik **Geri al** ile geri alınabilir.
 

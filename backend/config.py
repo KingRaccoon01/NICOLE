@@ -69,6 +69,9 @@ FLAG_GEMINI_MODEL = os.getenv("FLAG_GEMINI_MODEL", "gemini-flash-lite-latest")
 # doğrudan gösteriyor, bir dahaki sefere log kazmaya gerek kalmayacak.
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
+# Ayarlar'da "Hızlı" seçilince Editör bu modelle başlar. Denemede (21 Kasım 2026) 3.6-flash yoğunluktan
+# 50-96 sn sürerken / 503 verirken 3.1-flash-lite 2-3 sn'de cevap verdi.
+GEMINI_FAST_MODEL = os.getenv("GEMINI_FAST_MODEL", "gemini-3.1-flash-lite")
 # Ana model "çok talep var" (HTTP 503) ya da kota (HTTP 429) hatası verirse sırayla
 # denenecek YEDEK modeller (virgülle ayır). Her modelin ücretsiz kotası ayrı sayılır
 # ve Flash-Lite modellerinin günlük limiti genelde daha yüksektir. "-latest" takma

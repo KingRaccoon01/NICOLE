@@ -132,6 +132,7 @@ async function sendChatMessage() {
       content: text,
       include_context: includeContext,
       allow_edits: allowEdits,
+      fast: NicoleSettings.get("editorSpeed") === "fast",
     });
     thinking.remove();
     renderChatMessage(reply);

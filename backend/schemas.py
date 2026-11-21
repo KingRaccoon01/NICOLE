@@ -100,6 +100,8 @@ class ChatMessageIn(BaseModel):
     include_context: bool = True
     # True ise Nicole Editör metni DOĞRUDAN düzenleyebilir (bağlam otomatik eklenir)
     allow_edits: bool = False
+    # True: Editör hızlı modelle başlar (Ayarlar > Editör modeli)
+    fast: bool = False
 
 
 class EditOut(BaseModel):

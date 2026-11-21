@@ -174,15 +174,29 @@ def _run_transcribe(
         vad_filter=True,  # sessizlikleri otomatik ele, gereksiz metin üretmesin
         initial_prompt=vocabulary_hint or None,  # özel isim/terimleri doğru tanıması için ipucu
         beam_size=5,  # daha geniş arama -> daha tutarlı/doğru sonuç (varsayılandan biraz yüksek)
-        temperature=0.0,  # deterministik çıktı — aynı sesi her seferinde aynı şekilde yazsın
+        # Önce deterministik (0.0); Whisper kendini tekrar etmeye başlarsa (sıkıştırma oranı yüksek) biraz
+        # daha serbest dener. Sadece 0.0 verildiğinde bu kaçış yolu kapalıydı ve tekrar döngüsünde kalıyordu.
+        temperature=[0.0, 0.2, 0.4],
         condition_on_previous_text=False,  # önceki (yanlış) tahminin sonraki tahmini bozmasını önler
         word_timestamps=with_words,  # kelime bazlı eminlik puanı için gerekli
     )
     segments = list(segments)
     text = " ".join(seg.text.strip() for seg in segments).strip()
+    if vocabulary_hint and looks_like_hint_echo(text, vocabulary_hint):
+        # Gerçek denemede "Merhaba Nicole nasılsın" -> "Elmarisi, Kael, Kel, Vorthan, ..." (x20) çıktı:
+        # Whisper sesi çözemeyince ipucu listesini kopyaladı. İpucusuz bir kez daha dene.
+        logger.warning("Whisper ipucu listesini tekrar etti — ipucusuz yeniden deneniyor: %r", text[:120])
+        return _run_transcribe(model, audio_bytes, None, with_words, uncertain_prob)
     if not with_words:
         return text
     return text, uncertain_words(segments, uncertain_prob)
+
+
+def looks_like_hint_echo(text: str, hint: str) -> bool:
+    """Çıktının en az %60'ı ipucudaki kelimelerden oluşuyorsa (ve en az 3 kelimeyse) ipucu kopyalanmıştır."""
+    words = re.findall(r"\w+", text.lower())
+    hint_words = set(re.findall(r"\w+", hint.lower()))
+    return len(words) >= 3 and sum(w in hint_words for w in words) / len(words) >= 0.6
 
 
 def uncertain_words(segments, threshold: float | None = None) -> list[str]:

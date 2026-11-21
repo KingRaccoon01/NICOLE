@@ -219,6 +219,7 @@ async def send_message(project_id: int, payload: ChatMessageIn, session: AsyncSe
 
     result = await gemini_service.chat_full(
         payload.content, context, history, allow_edits=payload.allow_edits, lore_terms=lore_terms,
+        fast=payload.fast,
     )
 
     if not result["ok"]:

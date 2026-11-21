@@ -240,6 +240,40 @@ def test_tts_params_and_validation():
     assert client.post("/api/tts", json={"text": ""}).status_code == 422
 
 
+def test_hint_echo_detected():
+    from backend.services.stt_service import looks_like_hint_echo
+    hint = "Elmarisi, Kael, Kel, Vorthan, Wateron"
+    assert looks_like_hint_echo("Elmarisi, Kael, Kel, Vorthan, Wateron, Elmarisi, Kael, Kel", hint)
+    assert not looks_like_hint_echo("Merhaba Nicole, Kael bugün nasıl sence?", hint)
+    assert not looks_like_hint_echo("Kael", hint)  # tek kelimelik gerçek cevap
+
+
+def test_fast_mode_starts_with_fast_model_and_timeout_switches(monkeypatch):
+    import httpx
+    from backend import config
+    from backend.services import gemini_service as g
+
+    calls = []
+
+    async def fake_post(url, body, attempts=4):
+        model = url.split("/models/")[1].split(":")[0]
+        calls.append(model)
+        if model == "yavas":
+            raise httpx.ReadTimeout("zaman aşımı")
+        return {"candidates": [{"content": {"parts": [{"text": f"cevap-{model}"}]}}]}
+
+    monkeypatch.setattr(g, "_post_with_retry", fake_post)
+    monkeypatch.setattr(config, "GEMINI_API_KEY", "test")
+    monkeypatch.setattr(config, "GEMINI_MODEL", "yavas")
+    monkeypatch.setattr(config, "GEMINI_FAST_MODEL", "hizli")
+    monkeypatch.setattr(config, "GEMINI_FALLBACK_MODELS", ["yedek"])
+
+    assert asyncio.run(g.chat_full("selam", None, [], fast=True))["reply"] == "cevap-hizli"
+    calls.clear()
+    r = asyncio.run(g.chat_full("selam", None, []))
+    assert r["reply"] == "cevap-yedek" and calls == ["yavas", "yedek"]  # zaman aşımı tekrar denenmedi
+
+
 def test_no_cors_for_foreign_sites():
     res = client.get("/api/projects", headers={"Origin": "https://kotu-site.example"})
     assert "access-control-allow-origin" not in res.headers

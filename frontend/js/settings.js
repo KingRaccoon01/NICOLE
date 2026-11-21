@@ -19,6 +19,7 @@ const NicoleSettings = (() => {
     chatHold: false,
     flagEngine: "",         // Flag taraması: "" (.env), "ollama" | "gemini"
     uncertainProb: 0,       // Emin olmama eşiği; 0 = .env ayarı (WHISPER_UNCERTAIN_PROB)
+    editorSpeed: "quality", // Nicole Editör modeli: "quality" | "fast"
     ttsEnabled: false,      // Nicole Editör cevaplarını sesli oku
     ttsVoice: "",           // Seçili ses adı ("" = en iyi Türkçe ses otomatik)
     ttsRate: 1,             // Konuşma hızı
@@ -235,6 +236,7 @@ bindSetting("inputModeSelect", "inputMode");
 bindSetting("dictationHold", "dictationHold");
 bindSetting("chatHold", "chatHold");
 bindSetting("flagEngineSelect", "flagEngine");
+bindSetting("editorSpeedSelect", "editorSpeed");
 
 document.getElementById("settingsBtn")?.addEventListener("click", () => {
   const overlay = document.getElementById("settingsOverlay");

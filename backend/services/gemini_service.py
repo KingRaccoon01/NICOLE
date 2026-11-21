@@ -25,7 +25,8 @@ MAX_CONTEXT_CHARS = 150_000
 # Sunucu taraflı geçici hatalar (503 "çok talep var" gibi): aynı modeli kısa bekleyerek
 # bir kez daha dener, olmazsa yedek modele geçer. 429/404'te beklemeden yedek modele geçer.
 _SERVER_ERROR_CODES = {500, 502, 503, 504}
-_SWITCH_MODEL_CODES = _SERVER_ERROR_CODES | {429, 404}
+_SWITCH_MODEL_CODES = _SERVER_ERROR_CODES | {429, 404, 408}  # 408: model zamanında cevap vermedi
+_REQUEST_TIMEOUT_SECONDS = 75.0
 _SERVER_TRIES_PER_MODEL = 2
 _RETRY_DELAY_SECONDS = 2.0
 
@@ -107,13 +108,15 @@ async def _post_with_retry(url: str, body: dict, attempts: int = 4):
     last_exc: Exception | None = None
     for attempt in range(1, attempts + 1):
         try:
-            async with new_client(timeout=60.0) as client:
+            async with new_client(timeout=_REQUEST_TIMEOUT_SECONDS) as client:
                 # Anahtar URL'de değil başlıkta: httpx tam URL'yi INFO seviyesinde loglar.
                 resp = await client.post(url, json=body, headers={"x-goog-api-key": config.GEMINI_API_KEY})
                 resp.raise_for_status()
                 return resp.json()
-        except httpx.HTTPStatusError:
-            raise  # HTTP hata kodları (404, 429 vb.) yeniden denemeye değmez, direkt yukarı fırlat
+        except (httpx.HTTPStatusError, httpx.TimeoutException):
+            # HTTP hata kodları ve zaman aşımı aynı modelde yeniden denemeye değmez: eskiden zaman aşımı
+            # 4 kez denenip dakikalarca bekletiyordu. Yukarıda (_generate_with_fallback) yedek modele geçilir.
+            raise
         except Exception as exc:
             last_exc = exc
             if attempt < attempts:
@@ -121,9 +124,11 @@ async def _post_with_retry(url: str, body: dict, attempts: int = 4):
                 await asyncio.sleep(0.5)
     raise last_exc
 
-def _model_chain() -> list[str]:
-    """Ana model + yedek modeller (tekrarsız, sıralı)."""
-    chain = [config.GEMINI_MODEL]
+def _model_chain(first: str | None = None) -> list[str]:
+    """Ana model + yedek modeller (tekrarsız, sıralı). first verilirse zincir onunla başlar ("Hızlı" mod)."""
+    chain = [first] if first else []
+    if config.GEMINI_MODEL not in chain:
+        chain.append(config.GEMINI_MODEL)
     for m in config.GEMINI_FALLBACK_MODELS:
         if m and m not in chain:
             chain.append(m)
@@ -147,7 +152,9 @@ def _http_error_info(exc: httpx.HTTPStatusError) -> tuple[int, str]:
     return status, message
 
 
-async def _generate_with_fallback(body: dict) -> tuple[dict | None, str | None, list[tuple[str, int, str]]]:
+async def _generate_with_fallback(
+    body: dict, first_model: str | None = None,
+) -> tuple[dict | None, str | None, list[tuple[str, int, str]]]:
     """
     Modelleri sırayla dener. Dönüş: (yanıt, cevaplayan_model, hatalar[(model, http_kodu, mesaj)]).
     - 500/502/503/504: aynı modeli kısa beklemeyle bir kez daha dener, olmazsa sonraki modele geçer.
@@ -156,7 +163,7 @@ async def _generate_with_fallback(body: dict) -> tuple[dict | None, str | None, 
     HTTP olmayan hatalar (SSL, bağlantı) yukarı fırlatılır.
     """
     errors: list[tuple[str, int, str]] = []
-    for model in _model_chain():
+    for model in _model_chain(first_model):
         url = _model_url(model)
         for attempt in range(1, _SERVER_TRIES_PER_MODEL + 1):
             try:
@@ -172,6 +179,10 @@ async def _generate_with_fallback(body: dict) -> tuple[dict | None, str | None, 
                     await asyncio.sleep(_RETRY_DELAY_SECONDS)
                     continue
                 errors.append((model, status, message))
+                break
+            except httpx.TimeoutException:
+                logger.error("Gemini %s %.0f sn içinde cevap vermedi — yedek modele geçiliyor.", model, _REQUEST_TIMEOUT_SECONDS)
+                errors.append((model, 408, f"{_REQUEST_TIMEOUT_SECONDS:.0f} sn içinde cevap vermedi (Google tarafı yoğun)"))
                 break
         if errors[-1][1] not in _SWITCH_MODEL_CODES:
             break
@@ -231,8 +242,10 @@ async def chat_full(
     history: list[dict],
     allow_edits: bool = False,
     lore_terms: list[str] | None = None,
+    fast: bool = False,
 ) -> dict:
     """
+    fast=True: zincir GEMINI_FAST_MODEL ile başlar (Ayarlar > Editör modeli > Hızlı).
     Dönüş: {"reply": str, "edits": [{"action","paragraph_id","new_text"}, ...], "ok": bool,
             "model": cevabı veren model, "usage": Google'ın token sayımı (girdi/düşünme/çıktı)}
 
@@ -273,7 +286,7 @@ async def chat_full(
         return {"ok": False, "edits": [], "reply": text}
 
     try:
-        data, used_model, errors = await _generate_with_fallback(body)
+        data, used_model, errors = await _generate_with_fallback(body, config.GEMINI_FAST_MODEL if fast else None)
     except Exception as exc:
         logger.error("Gemini API isteği başarısız (%s): %s", type(exc).__name__, exc)
         detail = str(exc) or "(ayrıntı yok)"
@@ -304,8 +317,8 @@ async def chat_full(
             hint = "API anahtarı geçersiz, kısıtlı veya bu modele izni yok — aistudio.google.com/apikey üzerinden anahtarı kontrol et."
         elif status == 404:
             hint = f"'{model}' modeli bulunamadı — .env dosyasında GEMINI_MODEL adını kontrol et."
-        elif status in _SERVER_ERROR_CODES:
-            hint = "Google'ın sunucuları o model için yoğun (geçici). Birkaç dakika sonra tekrar dene."
+        elif status in _SERVER_ERROR_CODES or status == 408:
+            hint = "Google'ın sunucuları o model için yoğun (geçici). Birkaç dakika sonra tekrar dene ya da Ayarlar > Model > Hızlı'yı seç."
         else:
             hint = "Ayrıntı için Google'ın döndürdüğü mesaja bak."
         tried = ", ".join(f"{m} ({st})" for m, st, _ in errors)
