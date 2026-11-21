@@ -1,7 +1,6 @@
 // Nicole — Flag sistemi: paragraf render + Müdahale modalı (4 aksiyon)
 
 let activeFlag = null; // modal açıkken üzerinde çalışılan flag verisi
-let globalFlagCounter = 0;
 let editingParagraphId = null; // şu an düzenleme modunda olan paragrafın id'si (varsa)
 
 function statusToClass(status) {
@@ -54,8 +53,7 @@ function buildParagraphHtml(paragraph) {
     html += escapeHtml(text.slice(cursor, flag.position_start));
 
     if (flag.status === "pending") {
-      globalFlagCounter++;
-      html += `<span class="flag-badge" data-flag-id="${flag.id}">🚩 ${globalFlagCounter}</span>`;
+      html += `<span class="flag-badge" data-flag-id="${flag.id}">🚩</span>`; // numara updateStats'ta verilir
     } else {
       const cls = statusToClass(flag.status);
       const shown = flag.final_text || flag.raw_text;
@@ -234,6 +232,9 @@ async function resolveActiveFlag(action, extra) {
 function updateStats() {
   const blocks = document.querySelectorAll(".paragraph-block");
   const flagBadges = document.querySelectorAll(".flag-badge");
+  // Numaralar her seferinde sayfadaki sıraya göre baştan verilir. Eskiden bir sayaç her yeniden
+  // çizimde (flag çözme, dikte ekleme, düzenleme iptali) artıyordu: 12 flag "🚩 117" görünüyordu.
+  flagBadges.forEach((b, i) => (b.textContent = `🚩 ${i + 1}`));
   document.getElementById("paraCount").textContent = `${blocks.length} paragraf`;
 
   // Sadece ".paragraph-text" içeriğini sayıyoruz — sil butonu (🗑) veya

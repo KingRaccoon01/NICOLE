@@ -14,7 +14,6 @@ async function loadChatHistory() {
 async function reloadTranscript() {
   if (!NicoleState.chapterId) return;
   document.querySelectorAll(".paragraph-block").forEach((b) => b.remove());
-  globalFlagCounter = 0; // flags.js — 🚩 numaralandırması baştan başlasın
   Dictation.currentParagraphId = null; // dikte, silinmiş/değişmiş bir paragrafın sonuna eklemeye çalışmasın
   const paragraphs = await apiGet(`/chapters/${NicoleState.chapterId}/paragraphs`);
   if (paragraphs.length === 0) {
