@@ -126,6 +126,7 @@ async function sendChatMessage() {
     });
     thinking.remove();
     renderChatMessage(reply);
+    if (reply.id === 0 && !input.value) input.value = text; // hata: mesaj kaydedilmedi, tekrar denemek için geri koy
     if (reply.edits && reply.edits.length) {
       await reloadTranscript(); // Editör metne dokunduysa sol panel hemen güncellensin
     }

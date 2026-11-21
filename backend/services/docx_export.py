@@ -22,18 +22,22 @@ def _resolved_text(paragraph) -> str:
     return text
 
 
-def export_chapter_to_docx(chapter: Chapter) -> bytes:
+def export_project_to_docx(title: str, chapters: list[Chapter]) -> bytes:
+    """Romanın tamamı tek dosyada. Bölüm başlıkları sadece birden fazla bölüm varsa yazılır."""
     doc = Document()
-    title = doc.add_heading(chapter.title, level=1)
+    doc.styles["Normal"].font.size = Pt(12)
+    doc.add_heading(title, level=0)
 
-    for paragraph in chapter.paragraphs:
-        p = doc.add_paragraph(_resolved_text(paragraph))
-        p.style.font.size = Pt(12)
+    for chapter in chapters:
+        if len(chapters) > 1:
+            doc.add_heading(chapter.title, level=1)
+        for paragraph in chapter.paragraphs:
+            doc.add_paragraph(_resolved_text(paragraph))
 
     buf = io.BytesIO()
     doc.save(buf)
     return buf.getvalue()
 
 
-def unresolved_flag_count(chapter: Chapter) -> int:
-    return sum(1 for para in chapter.paragraphs for f in para.flags if f.status == FlagStatus.pending)
+def unresolved_flag_count(chapters: list[Chapter]) -> int:
+    return sum(1 for ch in chapters for para in ch.paragraphs for f in para.flags if f.status == FlagStatus.pending)

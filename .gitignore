@@ -10,3 +10,4 @@ __pycache__/
 # Kullanıcı verisi (romanlar)
 nicole.db
 nicole.db.bak*
+.pytest_cache/

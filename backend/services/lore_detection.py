@@ -3,9 +3,11 @@ Nicole — Lore/Flag tespit servisi
 Ollama üzerinden yerel llama3 modelini kullanır: tamamen ücretsiz, internet gerektirmez.
 Önce kur: https://ollama.com  ardından terminalde: `ollama pull llama3`
 
-Görev: Bir paragraf metninde geçen, Lore Sözlüğü'nde KARŞILIĞI OLMAYAN
-kurgusal/jargon terimleri bulmak (örn. "chidori", "rasengan", "bankai")
-ve her biri için makul bir gerçek-dünya karşılığı önermek (örn. "çakı").
+Görev: Whisper'ın yazıya döktüğü paragrafta yazarın kontrol etmesi gereken kelimeleri bulmak:
+  1) Yanlış duyulmuş kelimeler -> öneri: bağlama göre yazarın büyük ihtimalle söylediği kelime
+     (örn. "falız" -> "filiz").
+  2) Lore Sözlüğü'nde olmayan yeni kurgusal adlar -> öneri: sözlükteki bir terimin yanlış
+     duyulmuş hali ise o terimin doğru yazımı, değilse terimin kendisi (yazar onaylar).
 """
 from __future__ import annotations
 import json
@@ -81,12 +83,16 @@ def is_common_term(term: str) -> bool:
     return bool(words) and all(_word_is_common(w) for w in words)
 
 
-def filter_flags(flags: list, known_terms: list[str]) -> list[dict]:
+def filter_flags(flags: list, known_terms: list[str], uncertain_words: list[str] | None = None) -> list[dict]:
     """
     Modelin döndürdüğü adayları süzer: boş/çok kısa olanlar, zaten Lore Sözlüğü'nde olanlar,
     tekrarlar ve yaygın Türkçe kelimeler elenir. Dönüş: [{"term","suggestion"}, ...]
+
+    İSTİSNA: Whisper'ın emin olmadığı (uncertain_words) yaygın kelimeler elenmez — yanlış
+    duyulan kelime çoğu zaman gerçek bir kelimedir ("filiz" yerine "faiz" gibi).
     """
     known_lower = {tr_lower(t) for t in known_terms}
+    uncertain_lower = {tr_lower(w) for w in (uncertain_words or [])}
     seen: set[str] = set()
     result: list[dict] = []
     for f in flags:
@@ -98,57 +104,77 @@ def filter_flags(flags: list, known_terms: list[str]) -> list[dict]:
         key = tr_lower(term)
         if key in known_lower or key in seen:
             continue
-        if is_common_term(term):
+        if key not in uncertain_lower and is_common_term(term):
             continue
+        suggestion = str(f.get("suggestion") or "").strip()
+        if tr_lower(suggestion) == key:
+            suggestion = ""  # öneri terimin aynısıysa "öneriyi kabul et" anlamsız; "orijinali kabul et" yeter
         seen.add(key)
-        result.append({"term": term, "suggestion": str(f.get("suggestion") or "").strip()})
+        result.append({"term": term, "suggestion": suggestion})
     return result
 
 
 _SYSTEM_PROMPT = """\
-Sen bir kurgu editörü asistanısın. Görevin: paragrafta geçen KURGUSAL / UYDURMA özel
-terimleri bulmak — teknik/beceri/güç isimleri, uydurma eşya, yer ve karakter isimleri
-(örn. Chidori, Rasengan, Tsukuyomi, Bankai, Kamehameha gibi manga/anime terimleri de dahil).
-Bu terimler senin için ne kadar ünlü/tanıdık olursa olsun hepsini bul — "bilinen mi değil mi"
-kararını SEN VERME, o karar senden sonra ayrıca kontrol edilecek.
+Sen bir roman yazarının yardımcısısın. Yazar romanını SESLE dikte ediyor; konuşma tanıma (Whisper)
+bazı kelimeleri yanlış duyabiliyor. Görevin paragrafta yazarın kontrol etmesi gereken kelimeleri bulmak.
 
-KESİNLİKLE İŞARETLEME (bunlar normal Türkçe konuşmadır):
-- Günlük Türkçe kelimeler: zamirler, fiiller, sıfatlar, bağlaçlar (ben, sen, bu, güzel, gitti, nasılsınız ...)
-- Selamlaşma ve hitap kalıpları (selam, merhaba, hey, arkadaşlar, günaydın ...)
-- Sıradan kişi ve yer isimleri (Ahmet, İstanbul, Naruto, Sasuke gibi)
-- Cümlenin kendisini, birden fazla kelimelik sıradan bir ifadeyi
-Emin değilsen İŞARETLEME. Çoğu paragrafta hiç terim yoktur; doğru cevap çoğu zaman boş listedir.
+İKİ TÜR KELİME ARA:
+1) YANLIŞ DUYULMUŞ KELİME: cümlede anlamsız duran, bağlama uymayan ya da Türkçede olmayan kelime.
+   "suggestion" = cümlenin anlamına göre yazarın büyük ihtimalle söylediği kelime (aynı ekleriyle).
+2) YENİ KURGUSAL AD: karakter, yer, teknik, büyü, eşya adı gibi uydurma özel adlar.
+   LORE SÖZLÜĞÜ'ndeki bir terime benziyorsa (yanlış duyulmuş hali) "suggestion" = o terimin doğru
+   yazımı. Benzemiyorsa "suggestion" = terimin kendisi.
 
-Her terime kısa, günlük dilde bir karşılık öner. SADECE JSON döndür, başka hiçbir
-metin ekleme: {"flags": [{"term": "...", "suggestion": "..."}]}
+KURALLAR:
+- "term" metinde GEÇTİĞİ HALİYLE, harfi harfine aynı olmalı (tek kelime ya da kısa ad).
+- Bağlama uyan normal Türkçe kelimeleri, selamlaşmaları, yaygın kişi/yer adlarını (Ahmet, İstanbul) İŞARETLEME.
+- Lore Sözlüğü'nde AYNEN yazılı terimleri İŞARETLEME.
+- "Whisper'ın emin olmadığı kelimeler" verilirse onlara özellikle dikkat et — ama bağlama uyuyorsa işaretleme.
+- Emin değilsen işaretleme. Çoğu paragrafta hiçbir şey yoktur; doğru cevap çoğu zaman boş listedir.
+
+SADECE JSON döndür: {"flags": [{"term": "...", "suggestion": "..."}]}
 
 Örnekler:
-1) Paragraf: "Naruto Rasengan kullandı." -> {"flags": [{"term": "Rasengan", "suggestion": "top"}]}
-2) Paragraf: "Sasuke Tsukuyomi'yi aktive etti." -> {"flags": [{"term": "Tsukuyomi", "suggestion": "rüya"}]}
-3) Paragraf: "Ahmet İstanbul'a gitti." -> {"flags": []}
-4) Paragraf: "Hey selam ben Adal." -> {"flags": []}
-5) Paragraf: "Selam arkadaşlar nasılsınız?" -> {"flags": []}
-6) Paragraf: "Bugün hava çok güzeldi, eve gidip yemek yaptım." -> {"flags": []}
-
-Hiçbir terim bulamazsan: {"flags": []}
+1) Paragraf: "Bahçenin köşesinde küçük bir falız yeşermişti." -> {"flags": [{"term": "falız", "suggestion": "filiz"}]}
+2) Lore: Rasengan | Paragraf: "Naruto ra sengan ile saldırdı." -> {"flags": [{"term": "ra sengan", "suggestion": "Rasengan"}]}
+3) Lore: (boş) | Paragraf: "Kael, Vorthan kılıcını kınından çekti." -> {"flags": [{"term": "Vorthan", "suggestion": "Vorthan"}]}
+4) Paragraf: "Akşam yemeğinden sonra parka yürüdük." -> {"flags": []}
+5) Paragraf: "Kapıyı açtığında içerisi zifiri karanlıktı ama bir mum yandı." -> {"flags": []}
 """
 
+_MAX_LORE_IN_PROMPT = 200  # küçük modelin bağlamını boğmasın
 
-async def detect_flags(paragraph_text: str, known_terms: list[str]) -> list[dict]:
+
+def _build_user_prompt(paragraph_text: str, known_terms: list[str], uncertain_words: list[str], context: str | None) -> str:
+    parts = []
+    if known_terms:
+        parts.append("LORE SÖZLÜĞÜ (doğru yazımlar): " + ", ".join(known_terms[:_MAX_LORE_IN_PROMPT]))
+    if context:
+        parts.append(f"Önceki metin (sadece bağlam, buradan işaretleme yapma):\n{context[-1500:]}")
+    if uncertain_words:
+        parts.append("Whisper'ın emin olmadığı kelimeler: " + ", ".join(uncertain_words))
+    parts.append(f"Paragraf:\n{paragraph_text}")
+    return "\n\n".join(parts)
+
+
+async def detect_flags(
+    paragraph_text: str,
+    known_terms: list[str],
+    uncertain_words: list[str] | None = None,
+    context: str | None = None,
+) -> list[dict]:
     """
-    Dönüş: [{"term": "chidori", "suggestion": "çakı"}, ...]
+    Dönüş: [{"term": "falız", "suggestion": "filiz"}, ...]
+    uncertain_words: Whisper'ın düşük eminlikle yazdığı kelimeler (stt_service.uncertain_words).
+    context: aynı bölümün önceki metni — "en mantıklı kelime" ancak bağlamla bulunur.
     Ollama'ya erişilemezse (kurulu değilse) boş liste döner ve hata loglanır —
     uygulamanın geri kalanı çalışmaya devam eder.
 
-    NOT: Modele artık "bilinen terimler" listesi VERİLMİYOR — küçük modellerin
-    (örn. llama3.2:3b) "hem terimi tanı hem bilinen listeyle karşılaştır" gibi
-    çift görevi bir arada yapmakta tutarsız kaldığı gözlemlendi (bazı ünlü
-    terimleri gereksiz yere flag'liyor, bazı daha az bilinenleri hiç bulamıyordu).
-    Model artık SADECE "bu paragrafta hangi kurgusal terimler var" sorusuna
-    odaklanıyor; "zaten biliniyor mu" filtrelemesi aşağıda Python tarafında
-    (filter_flags içinde, known_terms ile karşılaştırarak) güvenilir şekilde yapılıyor.
+    Lore terimleri modele "doğru yazımlar" olarak verilir (yanlış duyulmuş bir terime doğru
+    yazımı önerebilsin diye). "Zaten sözlükte mi" elemesi yine Python tarafında, filter_flags
+    içinde yapılır — küçük modeller bu karşılaştırmada tutarsız kalabiliyor.
     """
-    user_prompt = f"Paragraf:\n{paragraph_text}"
+    user_prompt = _build_user_prompt(paragraph_text, known_terms, uncertain_words or [], context)
 
     payload = {
         "model": config.OLLAMA_MODEL,
@@ -158,7 +184,7 @@ async def detect_flags(paragraph_text: str, known_terms: list[str]) -> list[dict
         "format": "json",
         "options": {
             "temperature": 0.1,  # daha tutarlı/deterministik yanıt için düşük sıcaklık
-            "num_predict": 200,  # çıktıyı JSON'a yetecek kadar kısa tut — model gereksiz
+            "num_predict": 400,  # çıktıyı JSON'a yetecek kadar kısa tut — model gereksiz
                                   # uzun/"düşünen" çıktı üretip vakit kaybetmesin
         },
         # Modeli bellekte daha uzun tut — Ollama'nın varsayılanı 5 dakikadır, bu
@@ -201,9 +227,10 @@ async def detect_flags(paragraph_text: str, known_terms: list[str]) -> list[dict
     # kendi başına cevaplayabilmen için (özellikle "rasengan zaten known_terms
     # listesinde mi" ya da "model boş flags mi döndürdü" ayrımını görürsün).
     logger.info(
-        "Ollama flag taraması — ham yanıt: %s | post-filtre için bilinen terimler: %s",
+        "Ollama flag taraması — ham yanıt: %s | emin olunmayan kelimeler: %s | bilinen terim sayısı: %d",
         raw[:300],
-        known_terms if known_terms else "(boş)",
+        uncertain_words or "(yok)",
+        len(known_terms),
     )
 
     try:
@@ -216,7 +243,7 @@ async def detect_flags(paragraph_text: str, known_terms: list[str]) -> list[dict
         return []
 
     # Aday listesini süz: Lore Sözlüğü'ndekiler, tekrarlar ve yaygın Türkçe kelimeler elenir.
-    result = filter_flags(flags, known_terms)
+    result = filter_flags(flags, known_terms, uncertain_words)
     if len(result) != len(flags):
         logger.info("Flag filtresi: %d aday -> %d flag (yaygın kelime / bilinen terim / tekrar elendi)",
                     len(flags), len(result))
@@ -224,8 +251,9 @@ async def detect_flags(paragraph_text: str, known_terms: list[str]) -> list[dict
 
 
 def find_term_positions(paragraph_text: str, term: str) -> list[tuple[int, int]]:
-    """Paragraf içinde bir terimin tüm geçtiği (start, end) pozisyonlarını bulur."""
+    """Paragraf içinde bir terimin tüm geçtiği (start, end) pozisyonlarını bulur — sadece tam kelime
+    olarak ("ali" terimi "kalibre" içinde eşleşmez). Ek almış hali ("Gaara'nın") eşleşir."""
     positions = []
-    for m in re.finditer(re.escape(term), paragraph_text, flags=re.IGNORECASE):
+    for m in re.finditer(rf"(?<!\w){re.escape(term)}(?!\w)", paragraph_text, flags=re.IGNORECASE):
         positions.append((m.start(), m.end()))
     return positions

@@ -108,7 +108,8 @@ async def _post_with_retry(url: str, body: dict, attempts: int = 4):
     for attempt in range(1, attempts + 1):
         try:
             async with new_client(timeout=60.0) as client:
-                resp = await client.post(url, json=body)
+                # Anahtar URL'de değil başlıkta: httpx tam URL'yi INFO seviyesinde loglar.
+                resp = await client.post(url, json=body, headers={"x-goog-api-key": config.GEMINI_API_KEY})
                 resp.raise_for_status()
                 return resp.json()
         except httpx.HTTPStatusError:
@@ -132,7 +133,7 @@ def _model_chain() -> list[str]:
 def _model_url(model: str) -> str:
     return (
         f"https://generativelanguage.googleapis.com/v1beta/models/"
-        f"{model}:generateContent?key={config.GEMINI_API_KEY}"
+        f"{model}:generateContent"
     )
 
 
@@ -322,14 +323,3 @@ async def chat_full(
         return {"ok": True, **parsed, **meta}
     return {"ok": True, "reply": text, "edits": [], **meta}
 
-
-async def chat(
-    message: str,
-    story_context: str | None,
-    history: list[dict],
-    allow_edits: bool = False,
-    lore_terms: list[str] | None = None,
-) -> str:
-    """Geriye dönük uyumlu kısa yol (debug paneli kullanıyor): sadece cevap metnini döner."""
-    result = await chat_full(message, story_context, history, allow_edits=allow_edits, lore_terms=lore_terms)
-    return result["reply"]

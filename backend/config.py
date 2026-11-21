@@ -73,4 +73,3 @@ GEMINI_FALLBACK_MODELS = [
 
 # --- Genel ---
 APP_NAME = "Nicole"
-CORS_ORIGINS = os.getenv("CORS_ORIGINS", "*").split(",")

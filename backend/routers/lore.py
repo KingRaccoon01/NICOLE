@@ -1,12 +1,14 @@
 """Nicole — Lore Sözlüğü. Her romanın (projenin) kendi sözlüğü vardır."""
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select, or_, func
+from sqlalchemy import select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..database import (
     get_session, Project, Chapter, Paragraph, LoreEntry, LoreSource, FlaggedTerm, FlagStatus,
 )
 from ..schemas import LoreEntryCreate, LoreEntryOut
+from ..services.lore_detection import tr_lower
+from .flags import lore_has_term
 
 router = APIRouter(prefix="/api/projects/{project_id}/lore", tags=["lore"])
 
@@ -29,12 +31,12 @@ async def list_lore(project_id: int, q: str | None = None, session: AsyncSession
 @router.post("", response_model=LoreEntryOut)
 async def add_lore_entry(project_id: int, payload: LoreEntryCreate, session: AsyncSession = Depends(get_session)):
     await _require_project(session, project_id)
-    existing = await session.execute(
-        select(LoreEntry).where(LoreEntry.project_id == project_id, LoreEntry.term == payload.term)
-    )
-    if existing.scalar_one_or_none():
+    term = payload.term.strip()
+    if not term:
+        raise HTTPException(400, "Terim boş olamaz")
+    if await lore_has_term(session, project_id, term):
         raise HTTPException(400, "Bu terim bu romanın sözlüğünde zaten var")
-    entry = LoreEntry(project_id=project_id, term=payload.term, definition=payload.definition, source=LoreSource.manual)
+    entry = LoreEntry(project_id=project_id, term=term, definition=payload.definition, source=LoreSource.manual)
     session.add(entry)
     await session.commit()
     await session.refresh(entry)
@@ -60,10 +62,11 @@ async def delete_lore_entry(project_id: int, entry_id: int, session: AsyncSessio
         select(FlaggedTerm)
         .join(Paragraph, FlaggedTerm.paragraph_id == Paragraph.id)
         .join(Chapter, Paragraph.chapter_id == Chapter.id)
-        .where(Chapter.project_id == project_id, func.lower(FlaggedTerm.raw_text) == term.lower())
+        .where(Chapter.project_id == project_id)
     )
     affected_paragraph_ids = set()
-    for flag in affected_result.scalars().all():
+    # Python'da tr_lower: SQLite'ın lower()'ı sadece ASCII küçültür ("IŞIK" ile "ışık" eşleşmez).
+    for flag in (f for f in affected_result.scalars().all() if tr_lower(f.raw_text) == tr_lower(term)):
         flag.status = FlagStatus.pending
         flag.final_text = None
         flag.resolved_at = None

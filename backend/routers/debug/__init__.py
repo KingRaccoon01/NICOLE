@@ -274,7 +274,7 @@ async def test_docx():
             )
             fresh_chapter = result.scalar_one()
 
-            docx_bytes = docx_export.export_chapter_to_docx(fresh_chapter)
+            docx_bytes = docx_export.export_project_to_docx(project.title, [fresh_chapter])
 
             await session.delete(project)
             await session.commit()

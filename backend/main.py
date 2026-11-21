@@ -6,7 +6,6 @@ import asyncio
 import logging
 
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 
@@ -24,13 +23,8 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 
 app = FastAPI(title=config.APP_NAME)
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=config.CORS_ORIGINS,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# CORS bilerek YOK: ön yüz aynı adresten sunuluyor. "*" açıkken tarayıcıda açık olan
+# herhangi bir site localhost'taki romanları okuyup silebiliyordu.
 
 
 @app.on_event("startup")

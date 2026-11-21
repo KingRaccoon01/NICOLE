@@ -20,10 +20,10 @@ import json
 import logging
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
-from sqlalchemy import select, func
+from sqlalchemy import select
 
 from .. import config
-from ..database import AsyncSessionLocal, Chapter, Paragraph, LoreEntry
+from ..database import AsyncSessionLocal, Chapter, Paragraph, LoreEntry, next_order, touch_project
 from ..services.stt_service import transcribe_audio_chunk
 from ..services.lore_detection import detect_flags
 from .flags import create_flags_for_paragraph
@@ -72,7 +72,10 @@ def _parse_control_message(raw_msg: str) -> tuple[bool, int | None]:
         return False, None
     if isinstance(parsed, dict) and parsed.get("type") == "end_utterance":
         append_to = parsed.get("append_to")
-        return True, (int(append_to) if append_to else None)
+        try:
+            return True, (int(append_to) if append_to else None)
+        except (TypeError, ValueError):
+            return True, None  # bozuk id soketi düşürmesin: yeni paragraf açılır
     return False, None
 
 
@@ -99,7 +102,9 @@ async def dictate(websocket: WebSocket, chapter_id: int):
                     await websocket.send_text(json.dumps({"type": "status", "message": "Ses gönderildi, metne çevriliyor..."}))
                     try:
                         vocabulary_hint = await _build_vocabulary_hint(chapter_id)
-                        text = await transcribe_audio_chunk(bytes(audio_buffer), vocabulary_hint=vocabulary_hint)
+                        text, uncertain = await transcribe_audio_chunk(
+                            bytes(audio_buffer), vocabulary_hint=vocabulary_hint, with_words=True,
+                        )
                     except Exception as exc:
                         logger.exception("Transkripsiyon hatası")
                         record_error("dictation_ws/transcribe", f"{type(exc).__name__}: {exc}")
@@ -120,7 +125,9 @@ async def dictate(websocket: WebSocket, chapter_id: int):
 
                     await websocket.send_text(json.dumps({"type": "status", "message": f'Metin algılandı: "{text[:40]}..." — lore/flag taranıyor...'}))
                     try:
-                        paragraph_payload = await _save_paragraph_and_scan(chapter_id, text, append_to=append_to)
+                        paragraph_payload = await _save_paragraph_and_scan(
+                            chapter_id, text, append_to=append_to, uncertain_words=uncertain,
+                        )
                         await websocket.send_text(json.dumps({"type": "paragraph", "data": paragraph_payload}))
                     except Exception as exc:
                         logger.exception("Paragraf kaydetme/flag tarama hatası")
@@ -134,7 +141,18 @@ async def dictate(websocket: WebSocket, chapter_id: int):
         logger.info("Dikte soketi kapandı (chapter_id=%s)", chapter_id)
 
 
-async def _save_paragraph_and_scan(chapter_id: int, text: str, append_to: int | None = None) -> dict:
+async def _previous_text(session, chapter_id: int, before_order: int) -> str:
+    """Bölümde bu paragraftan önceki son birkaç paragraf — modelin 'en mantıklı kelime'yi seçebilmesi için bağlam."""
+    result = await session.execute(
+        select(Paragraph.text).where(Paragraph.chapter_id == chapter_id, Paragraph.order < before_order)
+        .order_by(Paragraph.order.desc()).limit(3)
+    )
+    return "\n".join(reversed(result.scalars().all()))
+
+
+async def _save_paragraph_and_scan(
+    chapter_id: int, text: str, append_to: int | None = None, uncertain_words: list[str] | None = None,
+) -> dict:
     """
     append_to verilmişse ve geçerliyse (aynı bölüme ait bir paragrafsa), yeni
     transkript o paragrafın SONUNA eklenir; aksi halde (append_to yoksa ya da
@@ -148,7 +166,9 @@ async def _save_paragraph_and_scan(chapter_id: int, text: str, append_to: int | 
             candidate = await session.get(Paragraph, append_to)
             if candidate is not None and candidate.chapter_id == chapter_id:
                 offset = len(candidate.text) + 1  # +1: metinler arasına eklenen boşluk
+                context = candidate.text
                 candidate.text = f"{candidate.text} {text}"
+                await touch_project(session, chapter_id)
                 await session.commit()
                 await session.refresh(candidate)
                 paragraph = candidate
@@ -156,12 +176,11 @@ async def _save_paragraph_and_scan(chapter_id: int, text: str, append_to: int | 
         is_append = paragraph is not None
 
         if paragraph is None:
-            count_result = await session.execute(
-                select(func.count()).select_from(Paragraph).where(Paragraph.chapter_id == chapter_id)
-            )
-            order = count_result.scalar_one()
+            order = await next_order(session, Paragraph, Paragraph.chapter_id == chapter_id)
+            context = await _previous_text(session, chapter_id, order)
             paragraph = Paragraph(chapter_id=chapter_id, text=text, order=order)
             session.add(paragraph)
+            await touch_project(session, chapter_id)
             await session.commit()
             await session.refresh(paragraph)
 
@@ -171,7 +190,7 @@ async def _save_paragraph_and_scan(chapter_id: int, text: str, append_to: int | 
         # zaten flag'lenmiş/çözülmüş kısımlar tekrar taranıp gereksiz yere
         # yeniden işaretlenmesin. search_text/offset de aynı nedenle "text"
         # üzerinde arama yapıp gerçek pozisyonu (offset ile) hesaplar.
-        detected = await detect_flags(text, known_terms)
+        detected = await detect_flags(text, known_terms, uncertain_words=uncertain_words, context=context)
         await create_flags_for_paragraph(session, paragraph, detected, search_text=text, offset=offset)
         await session.refresh(paragraph, attribute_names=["flags"])
 

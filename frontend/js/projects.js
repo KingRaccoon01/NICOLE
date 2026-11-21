@@ -15,7 +15,7 @@ async function loadProjects() {
     card.className = "project-card";
     card.innerHTML = `
       <div class="title">${escapeHtml(p.title)}</div>
-      <div class="meta">Son güncelleme: ${new Date(p.updated_at).toLocaleDateString("tr-TR")}</div>
+      <div class="meta">Son güncelleme: ${new Date(p.updated_at + "Z").toLocaleDateString("tr-TR")}</div>
     `;
     card.addEventListener("click", () => openProject(p.id));
     grid.appendChild(card);
@@ -36,12 +36,6 @@ async function openProject(projectId) {
   }
   NicoleState.chapterId = chapterId;
   window.location.href = "index.html";
-}
-
-function escapeHtml(str) {
-  const div = document.createElement("div");
-  div.textContent = str;
-  return div.innerHTML;
 }
 
 document.getElementById("newProjectBtn").addEventListener("click", async () => {

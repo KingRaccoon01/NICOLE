@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..database import get_session, FlaggedTerm, FlagStatus, LoreEntry, LoreSource, Paragraph, Chapter
 from ..schemas import FlagResolveRequest, FlaggedTermOut
-from ..services.lore_detection import find_term_positions
+from ..services.lore_detection import find_term_positions, tr_lower
 
 router = APIRouter(prefix="/api/flags", tags=["flags"])
 
@@ -27,8 +27,9 @@ async def create_flags_for_paragraph(
     offset: int = 0,
 ) -> None:
     """
-    chapters.py -> add_paragraph ve dictation_ws.py tarafından çağrılır.
-    Tespit edilen her terim için bir FlaggedTerm satırı açar.
+    dictation_ws.py tarafından çağrılır. Tespit edilen her terim için bir FlaggedTerm satırı açar.
+    Çakışan terimlerde ("Chidori" ve "Chidori Nagashi") uzun olan kazanır — üst üste binen
+    flag'ler hem ekranda hem DOCX'te metni bozuyordu.
 
     search_text/offset: paragraf, önceki bir metnin ÜZERİNE eklenen (append)
     bir parça içeriyorsa, pozisyon aramasının SADECE yeni eklenen kısımda
@@ -45,12 +46,15 @@ async def create_flags_for_paragraph(
     )
     order = existing_count.scalar_one()
 
-    for item in detected:
-        positions = find_term_positions(text_to_search, item["term"])
-        for start, end in positions:
+    taken: list[tuple[int, int]] = []
+    for item in sorted(detected, key=lambda d: len(d["term"]), reverse=True):
+        for start, end in find_term_positions(text_to_search, item["term"]):
+            if any(start < t_end and t_start < end for t_start, t_end in taken):
+                continue
+            taken.append((start, end))
             flag = FlaggedTerm(
                 paragraph_id=paragraph.id,
-                raw_text=item["term"],
+                raw_text=text_to_search[start:end],  # metinde yazdığı haliyle (büyük/küçük harf korunur)
                 suggested_text=item.get("suggestion") or None,
                 status=FlagStatus.pending,
                 position_start=start + offset,
@@ -71,13 +75,16 @@ async def _project_id_for_paragraph(session: AsyncSession, paragraph_id: int) ->
     return result.scalar_one()
 
 
+async def lore_has_term(session: AsyncSession, project_id: int, term: str) -> bool:
+    """Büyük/küçük harf duyarsız (Türkçe kurallı: I/ı, İ/i) — "Gaara" varken "gaara" ikinci kez eklenmesin."""
+    result = await session.execute(select(LoreEntry.term).where(LoreEntry.project_id == project_id))
+    key = tr_lower(term.strip())
+    return any(tr_lower(t) == key for t in result.scalars())
+
+
 async def _add_to_lore_if_missing(session: AsyncSession, project_id: int, term: str, source: LoreSource) -> None:
-    existing = await session.execute(
-        select(LoreEntry).where(LoreEntry.project_id == project_id, LoreEntry.term == term)
-    )
-    if existing.scalar_one_or_none() is None:
-        session.add(LoreEntry(project_id=project_id, term=term, source=source))
-        await session.commit()
+    if not await lore_has_term(session, project_id, term):
+        session.add(LoreEntry(project_id=project_id, term=term.strip(), source=source))
 
 
 @router.get("/{flag_id}", response_model=FlaggedTermOut)
@@ -126,7 +133,7 @@ async def resolve_flag(flag_id: int, payload: FlagResolveRequest, session: Async
             # kullanıcının sözlükte kendi yazdığı kelimeyi bulamayıp "eklenmedi"
             # sanmasına yol açıyordu.)
             await _add_to_lore_if_missing(session, project_id, payload.manual_text, LoreSource.manual)
-            if flag.raw_text.strip().lower() != payload.manual_text.strip().lower():
+            if tr_lower(flag.raw_text.strip()) != tr_lower(payload.manual_text.strip()):
                 await _add_to_lore_if_missing(session, project_id, flag.raw_text, LoreSource.manual)
 
     else:

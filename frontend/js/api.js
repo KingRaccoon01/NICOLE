@@ -33,6 +33,12 @@ async function apiDelete(path) {
   return res.json();
 }
 
+function escapeHtml(str) {
+  const div = document.createElement("div");
+  div.textContent = str;
+  return div.innerHTML;
+}
+
 // Aktif proje/bölüm tarayıcı localStorage'ında saklanır, sayfa yenilense de kaybolmaz.
 const NicoleState = {
   get projectId() {

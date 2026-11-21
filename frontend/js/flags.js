@@ -231,12 +231,6 @@ async function resolveActiveFlag(action, extra) {
   }
 }
 
-function escapeHtml(str) {
-  const div = document.createElement("div");
-  div.textContent = str;
-  return div.innerHTML;
-}
-
 function updateStats() {
   const blocks = document.querySelectorAll(".paragraph-block");
   const flagBadges = document.querySelectorAll(".flag-badge");

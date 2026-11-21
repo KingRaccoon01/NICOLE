@@ -251,7 +251,7 @@ async def test_dictation_flow():
 
     seen_known: list[list[str]] = []
 
-    async def fake_detect(text, known_terms):
+    async def fake_detect(text, known_terms, **_kw):
         seen_known.append(list(known_terms))
         return [{"term": term, "suggestion": "caki"}] if term.lower() in text.lower() else []
 
@@ -327,13 +327,14 @@ async def test_docx_content():
                 .options(selectinload(Chapter.paragraphs).selectinload(Paragraph.flags))
             )
             fresh = result.scalar_one()
-            docx_bytes = docx_export.export_chapter_to_docx(fresh)
-            unresolved = docx_export.unresolved_flag_count(fresh)
+            docx_bytes = docx_export.export_project_to_docx(project.title, [fresh])
+            unresolved = docx_export.unresolved_flag_count([fresh])
 
             doc = Document(io.BytesIO(docx_bytes))
             paragraphs = [p.text for p in doc.paragraphs]
             joined = "\n".join(paragraphs)
-            s.check("Bölüm başlığı yazıldı", "Debug Baslik" in paragraphs)
+            s.check("Roman başlığı yazıldı (tek bölümde bölüm başlığı yazılmaz)",
+                    "__debug_docx_content__" in paragraphs and "Debug Baslik" not in paragraphs)
             s.check("Çözülmüş flag: 'caki' yazıldı, 'chidori' yazılmadı", "caki" in joined and "chidori" not in joined)
             s.check("Bekleyen flag: orijinal 'rasengan' korundu", "rasengan" in joined)
             s.check("Paragraf tam beklenen metin",

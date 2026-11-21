@@ -25,8 +25,8 @@ document.getElementById("projectsBtn").addEventListener("click", () => {
 });
 
 document.getElementById("exportBtn").addEventListener("click", () => {
-  if (!NicoleState.chapterId) return;
-  window.location.href = `/api/chapters/${NicoleState.chapterId}/export`;
+  if (!NicoleState.projectId) return;
+  window.location.href = `/api/projects/${NicoleState.projectId}/export`;
 });
 
 document.querySelectorAll(".side-tab").forEach((tab) => {

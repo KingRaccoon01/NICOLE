@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from ..database import (
-    get_session, ChatMessage, Chapter, Paragraph, FlaggedTerm, FlagStatus, LoreEntry, EditLog,
+    get_session, ChatMessage, Chapter, Paragraph, FlaggedTerm, FlagStatus, LoreEntry, EditLog, touch_project,
 )
 from ..schemas import ChatMessageIn, ChatMessageOut, EditOut
 from ..services import gemini_service
@@ -147,6 +147,8 @@ async def _apply_edits(session: AsyncSession, project_id: int, message_id: int, 
         await session.flush()
         applied.append(log)
 
+    if applied:
+        await touch_project(session, applied[0].chapter_id)
     await session.commit()
     return applied
 
@@ -218,13 +220,20 @@ async def send_message(project_id: int, payload: ChatMessageIn, session: AsyncSe
         payload.content, context, history, allow_edits=payload.allow_edits, lore_terms=lore_terms,
     )
 
+    if not result["ok"]:
+        # Hata metni geçmişe girerse sonraki her istekte Gemini'ye "sohbet" olarak geri gider.
+        # Kullanıcı mesajı da silinir: cevapsız kalırsa geçmişte art arda iki kullanıcı mesajı oluşur.
+        await session.delete(user_msg)
+        await session.commit()
+        return ChatMessageOut(id=0, role="assistant", content=f"⚠ {result['reply']}", created_at=dt.datetime.utcnow())
+
     assistant_msg = ChatMessage(project_id=project_id, role="assistant", content=result["reply"])
     session.add(assistant_msg)
     await session.commit()
     await session.refresh(assistant_msg)
 
     applied: list[EditLog] = []
-    if payload.allow_edits and result["ok"] and result["edits"]:
+    if payload.allow_edits and result["edits"]:
         try:
             applied = await _apply_edits(session, project_id, assistant_msg.id, result["edits"])
         except Exception:

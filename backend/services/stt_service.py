@@ -20,6 +20,12 @@ _model = None
 _model_device = None  # gerçekte yüklenen cihaz — "cuda" istenip "cpu"ya düşülmüş olabilir
 _model_lock = asyncio.Lock()
 
+# Whisper her kelime için 0-1 arası bir "eminlik" verir. Bunun altındaki kelimeler "yanlış
+# duyulmuş olabilir" diye flag taramasına özellikle bildirilir (örn. "filiz" -> "falız").
+# Çok flag çıkıyorsa düşür (0.35), yanlış duyulanlar kaçıyorsa yükselt (0.65).
+UNCERTAIN_WORD_PROB = float(os.getenv("WHISPER_UNCERTAIN_PROB", "0.5") or 0.5)
+_WORD_PUNCT = " .,!?;:\"()[]{}«»“”‘’…-–—"
+
 
 def _nvidia_dll_dirs(roots: list[str]) -> list[str]:
     """
@@ -157,7 +163,7 @@ async def _force_reload_cpu():
     return _model
 
 
-def _run_transcribe(model, audio_bytes: bytes, vocabulary_hint: str | None = None) -> str:
+def _run_transcribe(model, audio_bytes: bytes, vocabulary_hint: str | None = None, with_words: bool = False):
     segments, _info = model.transcribe(
         io.BytesIO(audio_bytes),
         language=config.WHISPER_LANGUAGE,
@@ -166,11 +172,27 @@ def _run_transcribe(model, audio_bytes: bytes, vocabulary_hint: str | None = Non
         beam_size=5,  # daha geniş arama -> daha tutarlı/doğru sonuç (varsayılandan biraz yüksek)
         temperature=0.0,  # deterministik çıktı — aynı sesi her seferinde aynı şekilde yazsın
         condition_on_previous_text=False,  # önceki (yanlış) tahminin sonraki tahmini bozmasını önler
+        word_timestamps=with_words,  # kelime bazlı eminlik puanı için gerekli
     )
-    return " ".join(seg.text.strip() for seg in segments).strip()
+    segments = list(segments)
+    text = " ".join(seg.text.strip() for seg in segments).strip()
+    if not with_words:
+        return text
+    return text, uncertain_words(segments)
 
 
-async def transcribe_audio_chunk(audio_bytes: bytes, vocabulary_hint: str | None = None) -> str:
+def uncertain_words(segments) -> list[str]:
+    """Whisper'ın eminlik puanı UNCERTAIN_WORD_PROB altında kalan kelimeler (noktalama atılmış, tekrarsız)."""
+    found: list[str] = []
+    for seg in segments:
+        for w in getattr(seg, "words", None) or []:
+            word = w.word.strip(_WORD_PUNCT)
+            if word and w.probability < UNCERTAIN_WORD_PROB and word not in found:
+                found.append(word)
+    return found
+
+
+async def transcribe_audio_chunk(audio_bytes: bytes, vocabulary_hint: str | None = None, with_words: bool = False):
     """
     Ham ses baytlarını (webm/opus veya wav) metne çevirir.
 
@@ -183,18 +205,20 @@ async def transcribe_audio_chunk(audio_bytes: bytes, vocabulary_hint: str | None
     CUDA kütüphaneleri eksikse (örn. cublas64_12.dll bulunamazsa) model yüklenmiş
     olsa bile transcribe() anında hata fırlatabilir — bu durumda otomatik olarak
     CPU'ya geçilip işlem bir kez daha denenir.
+
+    with_words=True ise (metin, emin_olunmayan_kelimeler) döner; aksi halde sadece metin.
     """
     model = await get_model()
     loop = asyncio.get_event_loop()
 
     try:
-        return await loop.run_in_executor(None, _run_transcribe, model, audio_bytes, vocabulary_hint)
+        return await loop.run_in_executor(None, _run_transcribe, model, audio_bytes, vocabulary_hint, with_words)
     except Exception as exc:
         global _model_device
         if _model_device == "cuda":
             logger.warning("Transcribe CUDA hatası (%s) — CPU'ya düşülüp tekrar deneniyor.", exc)
             model = await _force_reload_cpu()
-            return await loop.run_in_executor(None, _run_transcribe, model, audio_bytes, vocabulary_hint)
+            return await loop.run_in_executor(None, _run_transcribe, model, audio_bytes, vocabulary_hint, with_words)
         raise
 
 

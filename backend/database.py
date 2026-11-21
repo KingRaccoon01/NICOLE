@@ -8,7 +8,7 @@ import logging
 import shutil
 from pathlib import Path
 
-from sqlalchemy import String, Text, Integer, ForeignKey, DateTime, Enum, Boolean, UniqueConstraint, text
+from sqlalchemy import String, Text, Integer, ForeignKey, DateTime, Enum, Boolean, UniqueConstraint, text, select, update, func
 from sqlalchemy.ext.asyncio import AsyncAttrs, create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -243,6 +243,18 @@ async def init_db() -> None:
         ))).fetchall()
     for pid, title, n in rows:
         logger.info("Lore Sözlüğü: '%s' (id=%s) — %s terim", title, pid, n)
+
+
+async def next_order(session: AsyncSession, model, *where) -> int:
+    """Sıradaki 'order' = en büyük + 1. Sayım (count) kullanılamaz: silmeler boşluk bırakır, sayım çakışan sıra üretir."""
+    result = await session.execute(select(func.coalesce(func.max(model.order), -1) + 1).where(*where))
+    return result.scalar_one()
+
+
+async def touch_project(session: AsyncSession, chapter_id: int) -> None:
+    """Romanın 'Son güncelleme' tarihini ileri al (paragraf eklenince/değişince proje satırı kendiliğinden değişmez)."""
+    project_id = select(Chapter.project_id).where(Chapter.id == chapter_id).scalar_subquery()
+    await session.execute(update(Project).where(Project.id == project_id).values(updated_at=_now()))
 
 
 async def get_session() -> AsyncSession:

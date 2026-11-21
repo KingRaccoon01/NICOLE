@@ -1,10 +1,10 @@
 """Nicole — Bölüm ve paragraf yönetimi (dikte/klavye ile üretilen metnin deposu)."""
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select, func
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from ..database import get_session, Chapter, Paragraph, FlaggedTerm
+from ..database import get_session, Chapter, Paragraph, FlaggedTerm, next_order, touch_project
 from ..schemas import ChapterCreate, ChapterOut, ParagraphOut, ParagraphCreate
 
 router = APIRouter(prefix="/api", tags=["chapters"])
@@ -12,8 +12,7 @@ router = APIRouter(prefix="/api", tags=["chapters"])
 
 @router.post("/projects/{project_id}/chapters", response_model=ChapterOut)
 async def create_chapter(project_id: int, payload: ChapterCreate, session: AsyncSession = Depends(get_session)):
-    count_result = await session.execute(select(func.count()).select_from(Chapter).where(Chapter.project_id == project_id))
-    order = count_result.scalar_one()
+    order = await next_order(session, Chapter, Chapter.project_id == project_id)
     chapter = Chapter(project_id=project_id, title=payload.title, order=order)
     session.add(chapter)
     await session.commit()
@@ -69,13 +68,11 @@ async def add_paragraph(chapter_id: int, payload: ParagraphCreate, session: Asyn
     misin?" diye tekrar sormanın bir anlamı yok. Flag sistemi SADECE Whisper
     ile (konuşarak) yazılan, yanlış transkript riski taşıyan metinler içindir.
     """
-    count_result = await session.execute(
-        select(func.count()).select_from(Paragraph).where(Paragraph.chapter_id == chapter_id)
-    )
-    order = count_result.scalar_one()
+    order = await next_order(session, Paragraph, Paragraph.chapter_id == chapter_id)
 
     paragraph = Paragraph(chapter_id=chapter_id, text=payload.text, order=order)
     session.add(paragraph)
+    await touch_project(session, chapter_id)
     await session.commit()
     await session.refresh(paragraph)
     await session.refresh(paragraph, attribute_names=["flags"])
@@ -101,6 +98,7 @@ async def update_paragraph(paragraph_id: int, payload: ParagraphCreate, session:
     old_flags_result = await session.execute(select(FlaggedTerm).where(FlaggedTerm.paragraph_id == paragraph_id))
     for old_flag in old_flags_result.scalars().all():
         await session.delete(old_flag)
+    await touch_project(session, paragraph.chapter_id)
     await session.commit()
     await session.refresh(paragraph)
     await session.refresh(paragraph, attribute_names=["flags"])
@@ -113,6 +111,7 @@ async def delete_paragraph(paragraph_id: int, session: AsyncSession = Depends(ge
     paragraph = await session.get(Paragraph, paragraph_id)
     if not paragraph:
         raise HTTPException(404, "Paragraf bulunamadı")
+    await touch_project(session, paragraph.chapter_id)
     await session.delete(paragraph)
     await session.commit()
     return {"ok": True}
