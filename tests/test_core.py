@@ -105,6 +105,10 @@ def test_flag_engine_chosen_in_ui_overrides_env(monkeypatch):
     assert got == [{"term": "çey", "suggestion": "çay"}]
 
 
+def test_frontend_files_not_served_stale():
+    assert client.get("/js/settings.js").headers["cache-control"] == "no-cache"
+
+
 def test_no_cors_for_foreign_sites():
     res = client.get("/api/projects", headers={"Origin": "https://kotu-site.example"})
     assert "access-control-allow-origin" not in res.headers

@@ -5,10 +5,15 @@
   font-size: 12px; color: var(--paper-dim);
 }
 .hotkey-row { flex-wrap: wrap; }
+/* Ayarlar: ⚙ düğmesinin altından açılan panel. Arka plan karartılmaz; dışarı tıklayınca/Esc ile kapanır. */
+#settingsOverlay { background: transparent; align-items: flex-start; justify-content: flex-end; padding: 62px 24px 0 0; }
+#settingsOverlay .settings-modal { width: 380px; box-shadow: 0 12px 32px rgba(0,0,0,0.55); animation: settings-drop 0.16s ease-out; }
+@keyframes settings-drop { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
 .settings-body { padding: 8px 18px 18px; display: flex; flex-direction: column; gap: 10px; font-size: 13px; }
 .settings-section { color: var(--gold); font-size: 12px; letter-spacing: 0.08em; margin-top: 8px; text-transform: uppercase; }
-.settings-row { display: flex; align-items: center; gap: 10px; white-space: nowrap; }
-.settings-row .control-select { flex: 1; }
+.settings-row { display: flex; align-items: center; gap: 10px; }
+.settings-row .hotkey-label { white-space: nowrap; }
+.settings-row .control-select { flex: 1; min-width: 0; }
 .lore-import-row { display: flex; gap: 8px; margin-bottom: 6px; }
 .lore-import-row .control-select { flex: 1; min-width: 0; }
 .lore-import-status { font-size: 12px; color: var(--paper-dim); margin-bottom: 10px; min-height: 1em; }

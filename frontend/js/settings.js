@@ -232,7 +232,11 @@ bindSetting("chatHold", "chatHold");
 bindSetting("flagEngineSelect", "flagEngine");
 
 document.getElementById("settingsBtn")?.addEventListener("click", () =>
-  document.getElementById("settingsOverlay").classList.add("open"));
+  document.getElementById("settingsOverlay").classList.toggle("open"));
+document.addEventListener("keydown", (e) => {
+  // Kısayol tuşu atanırken Esc atamayı iptal eder; paneli kapatmasın
+  if (e.key === "Escape" && !NicoleSettings.capturingKey) document.getElementById("settingsOverlay")?.classList.remove("open");
+});
 document.getElementById("settingsCloseBtn")?.addEventListener("click", () =>
   document.getElementById("settingsOverlay").classList.remove("open"));
 document.getElementById("settingsOverlay")?.addEventListener("click", (e) => {

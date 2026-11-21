@@ -47,6 +47,19 @@ app.include_router(debug.router)  # GEÇİCİ — proje bitince bu satırı ve b
 app.include_router(transcribe.router)
 
 
+@app.middleware("http")
+async def always_fresh_frontend(request, call_next):
+    """
+    Tarayıcı JS/CSS dosyalarını önbellekten kullanıp güncellemeyi görmeyebiliyordu (yeni index.html +
+    eski settings.js -> "Ayarlar" düğmesi tepkisiz). no-cache: her açılışta "değişti mi?" diye sorar;
+    değişmediyse dosya yine önbellekten gelir, yani yavaşlatmaz.
+    """
+    response = await call_next(request)
+    if not request.url.path.startswith("/api"):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
 @app.get("/api/health")
 async def health():
     return {"status": "ok", "app": config.APP_NAME}
