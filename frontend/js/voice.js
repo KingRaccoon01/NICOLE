@@ -14,6 +14,13 @@ const NicoleVoice = {
   firstSent: false,
   playing: false,
   preloaded: null,   // bir sonraki parçanın önceden yüklenen sesi (parçalar arası boşluk olmasın)
+  owner: null,       // okumayı başlatan düğme (▶ / 🔊): ses gerçekten çalarken yeşil yanar
+  active: false,     // şu an duyulur ses var mı
+
+  setActive(value) {
+    this.active = value;
+    if (this.owner) this.owner.classList.toggle("speaking", value);
+  },
 
   webVoices() {
     return window.speechSynthesis ? speechSynthesis.getVoices() : [];
@@ -41,14 +48,15 @@ const NicoleVoice = {
   },
 
   // --- Okuma: hazır metin (speak) ya da Gemini yazdıkça gelen metin (begin → feed... → end) ---
-  speak(text) {
-    this.begin();
+  speak(text, owner = null) {
+    this.begin(owner);
     this.feed(text);
     this.end();
   },
 
-  begin() {
+  begin(owner = null) {
     this.stop();
+    this.owner = owner;
     this.pending = "";
     this.firstSent = false;
   },
@@ -95,7 +103,7 @@ const NicoleVoice = {
   async playNext(my) {
     if (my !== this.seq) return;
     const item = this.queue.shift();
-    if (!item) { this.playing = false; this.audio = null; return; }
+    if (!item) { this.playing = false; this.audio = null; this.setActive(false); return; }
     this.playing = true;
     const got = await item;
     if (my !== this.seq) return;
@@ -106,10 +114,13 @@ const NicoleVoice = {
     const audio = this.preloaded && this.preloaded.item === item ? this.preloaded.audio : new Audio(got.url);
     this.preloaded = null;
     this.audio = audio;
-    const next = () => this.playNext(my);
+    let moved = false;
+    const next = () => { if (!moved) { moved = true; this.playNext(my); } };
     audio.addEventListener("ended", next, { once: true });
     audio.addEventListener("error", next, { once: true });
-    audio.addEventListener("playing", () => this.preloadNext(my), { once: true });
+    audio.addEventListener("playing", () => { if (my === this.seq) this.setActive(true); this.preloadNext(my); }, { once: true });
+    // Ses 10 sn içinde başlamazsa takılı kalmasın: sıradakine geç (yoksa "konuşuyor" sanılıp düğme hep "durdur" olurdu)
+    setTimeout(() => { if (my === this.seq && audio.currentTime === 0) next(); }, 10000);
     audio.play().catch(next);
   },
 
@@ -136,9 +147,12 @@ const NicoleVoice = {
         if (voice) { u.voice = voice; u.lang = voice.lang; } else { u.lang = "tr-TR"; }
         u.rate = NicoleSettings.get("ttsRate") || 1;
         u.pitch = NicoleSettings.get("ttsPitch") || 1;
+        if (i === 0) u.onstart = () => this.setActive(true);
         if (i === parts.length - 1) { u.onend = resolve; u.onerror = resolve; }
         speechSynthesis.speak(u);
       });
+      // Bazı tarayıcılarda (Brave) bitiş olayı hiç gelmeyebiliyor: tahmini süre dolunca devam et
+      setTimeout(resolve, 4000 + text.length * 120);
     });
   },
 
@@ -150,10 +164,19 @@ const NicoleVoice = {
     this.preloaded = null;
     if (this.audio) { this.audio.pause(); this.audio = null; }
     if (window.speechSynthesis) speechSynthesis.cancel();
+    this.setActive(false);
+    this.owner = null;
   },
 
+  // Sadece Nicole'nin kendi durumu: tarayıcının speechSynthesis.speaking'i Brave'de takılı kalabiliyordu
   speaking() {
-    return !!(this.playing || (this.audio && !this.audio.paused) || (window.speechSynthesis && speechSynthesis.speaking));
+    return this.playing;
+  },
+
+  // ▶ / 🔊 düğmeleri: bu düğmenin başlattığı okuma sürüyorsa durdur, değilse (başka okuma varsa onu kesip) başlat
+  toggle(text, button) {
+    if (this.playing && this.owner === button) return this.stop();
+    this.speak(text, button);
   },
 };
 
@@ -209,7 +232,14 @@ for (const [id, key] of [["ttsRateRange", "ttsRate"], ["ttsPitchRange", "ttsPitc
   range.addEventListener("change", () => NicoleSettings.set(key, Number(range.value)));
 }
 
-document.getElementById("ttsTestBtn")?.addEventListener("click", () =>
-  NicoleVoice.speaking()
-    ? NicoleVoice.stop()
-    : NicoleVoice.speak("Merhaba, ben Nicole. Hikâyende takıldığın bir yer varsa birlikte bakalım."));
+document.getElementById("ttsTestBtn")?.addEventListener("click", (e) => {
+  const btn = e.currentTarget;
+  const hint = document.getElementById("ttsHint");
+  NicoleVoice.toggle("Merhaba, ben Nicole. Hikâyende takıldığın bir yer varsa birlikte bakalım.", btn);
+  if (!NicoleVoice.playing) return;
+  setTimeout(() => {  // 10 sn'de ses gelmediyse kullanıcı neden olmadığını bilsin
+    if (NicoleVoice.owner === btn && !NicoleVoice.active) {
+      hint.textContent = "⚠ Ses çalınamadı. İnternet bağlantısını ve tarayıcının bu sayfada ses çalmasına izin verdiğini kontrol et; ya da 💻 bir ses seç.";
+    }
+  }, 10000);
+});

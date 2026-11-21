@@ -100,7 +100,7 @@ function renderChatMessage(msg, opts = {}) {
     speakBtn.className = "chat-speak-btn";
     speakBtn.title = "Sesli oku / durdur";
     speakBtn.textContent = "🔊";
-    speakBtn.addEventListener("click", () => (NicoleVoice.speaking() ? NicoleVoice.stop() : NicoleVoice.speak(msg.content)));
+    speakBtn.addEventListener("click", () => NicoleVoice.toggle(msg.content, speakBtn));
     bubble.appendChild(speakBtn);
   }
 
@@ -141,7 +141,11 @@ async function streamChatReply(body, thinking) {
       if (!line) continue;
       const event = JSON.parse(line);
       if (event.delta) {
-        if (!bubble) { thinking.remove(); bubble = renderChatMessage(live); }
+        if (!bubble) {
+          thinking.remove();
+          bubble = renderChatMessage(live);
+          if (speak) NicoleVoice.owner = bubble.querySelector(".chat-speak-btn");  // okurken bu 🔊 yeşil yanar
+        }
         live.content += event.delta;
         bubble.firstChild.textContent = live.content;
         document.getElementById("chatMessages").scrollTop = 1e9;
