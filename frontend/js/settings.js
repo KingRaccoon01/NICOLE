@@ -204,6 +204,14 @@ function attachHotkey(opts) {
 // Seçili mikrofonu açar. Cihaz artık bağlı değilse (örn. Bluetooth kulaklık kapandı) hata vermek
 // yerine varsayılan mikrofona düşer ve bunu bildirir. Gerçekte kullanılan cihazı ve ses
 // ayarlarını F12 Console'a yazar (ses kalitesi sorunlarını teşhis etmek için).
+// Bluetooth kulaklık mikrofonu açıldıktan sonra ~1 sn ses vermiyor (teşhis kaydında konuşma 0.9. sn'de
+// başladı; hemen konuşulunca kayıt boş kalıp Whisper "Görüşmek üzere" uydurdu). Kayıt hemen başlar,
+// ama "konuş" işareti bu süre kadar geç verilir.
+function micWarmupMs(stream) {
+  const label = stream?.getAudioTracks()[0]?.label || "";
+  return /bluetooth|hands-?free|headset|airpods|buds/i.test(label) ? 1000 : 0;
+}
+
 async function getMicStream(deviceId, onFallback) {
   let stream = null;
   if (deviceId) {

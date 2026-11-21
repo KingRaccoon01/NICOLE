@@ -7,10 +7,11 @@ olmayan tarayıcılarda da aynı ses ("Emel") çalışır. edge-tts, Microsoft E
 ulaşılamazsa ön yüz otomatik olarak tarayıcının kendi sesine düşer.
 """
 from __future__ import annotations
+import itertools
 import logging
 
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import Response
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger("nicole.tts")
@@ -18,6 +19,11 @@ router = APIRouter(prefix="/api/tts", tags=["tts"])
 
 DEFAULT_VOICE = "tr-TR-EmelNeural"
 _voices_cache: list[dict] | None = None
+# Hazırlanan okumalar: POST metni bırakır, tarayıcının <audio> öğesi GET ile akış olarak çeker.
+# (Ses çalar POST yapamaz; tamamını beklemek kısa bir cevapta 7, uzun bir cevapta 14 sn sürüyordu.)
+_pending: dict[str, "TTSRequest"] = {}
+_ids = itertools.count(1)
+_MAX_PENDING = 20
 
 
 class TTSRequest(BaseModel):
@@ -52,15 +58,43 @@ async def voices():
 
 
 @router.post("")
-async def speak(payload: TTSRequest):
+async def prepare(payload: TTSRequest):
+    """Okunacak metni bırakır; dönen adres <audio src> olarak kullanılır ve ses akış halinde gelir."""
+    while len(_pending) >= _MAX_PENDING:  # hiç çalınmayanlar birikmesin
+        _pending.pop(next(iter(_pending)))
+    token = str(next(_ids))
+    _pending[token] = payload
+    return {"url": f"/api/tts/stream/{token}"}
+
+
+@router.get("/stream/{token}")
+async def stream(token: str):
+    payload = _pending.get(token)  # silinmez: tarayıcı aynı sesi tekrar isterse yeniden üretilir (en eski 20 tutulur)
+    if payload is None:
+        raise HTTPException(404, "Bu okuma bulunamadı (süresi geçti)")
     import edge_tts
     rate, pitch = edge_params(payload.rate, payload.pitch)
+    chunks = edge_tts.Communicate(payload.text, payload.voice, rate=rate, pitch=pitch).stream()
+    # İlk parçayı burada bekle: hata (internet yok, geçersiz ses) olursa 502 dönsün, ön yüz tarayıcı sesine geçsin
     try:
-        communicate = edge_tts.Communicate(payload.text, payload.voice, rate=rate, pitch=pitch)
-        audio = b"".join([chunk["data"] async for chunk in communicate.stream() if chunk["type"] == "audio"])
+        first = None
+        async for chunk in chunks:
+            if chunk["type"] == "audio":
+                first = chunk["data"]
+                break
     except Exception as exc:
         logger.warning("Sesli okuma başarısız (%s: %s)", type(exc).__name__, exc)
         raise HTTPException(502, f"Ses üretilemedi: {exc}")
-    if not audio:
+    if first is None:
         raise HTTPException(502, "Ses üretilemedi (boş yanıt)")
-    return Response(audio, media_type="audio/mpeg")
+
+    async def rest():
+        yield first
+        try:
+            async for chunk in chunks:
+                if chunk["type"] == "audio":
+                    yield chunk["data"]
+        except Exception as exc:  # yarıda kesilirse o ana kadarki kısım çalınmış olur
+            logger.warning("Sesli okuma yarıda kesildi (%s: %s)", type(exc).__name__, exc)
+
+    return StreamingResponse(rest(), media_type="audio/mpeg")

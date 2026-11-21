@@ -187,7 +187,7 @@ def _run_transcribe(
         # Whisper sesi çözemeyince ipucu listesini kopyaladı. İpucusuz bir kez daha dene.
         logger.warning("Whisper ipucu listesini tekrar etti — ipucusuz yeniden deneniyor: %r", text[:120])
         return _run_transcribe(model, audio_bytes, None, with_words, uncertain_prob)
-    if is_hallucination(text):
+    if is_hallucination(text) or (segments and all(s.no_speech_prob >= 0.6 for s in segments)):
         logger.warning("Whisper hayalet cümle üretti (kayıtta anlaşılır konuşma yok): %r", text)
         text, segments = "", []
     if not with_words:
@@ -198,7 +198,7 @@ def _run_transcribe(
 # Whisper sessizlikte/gürültüde altyazı verisinden kalan bu cümleleri uydurur ("hallucination").
 # Gerçek denemede "Selam Nicole nasılsın" kaydı -> "Görüşürüz." ve "Hoşçakalın." çıktı.
 _HALLUCINATIONS = {
-    "görüşürüz", "hoşçakalın", "hoşça kalın", "hoşçakal", "güle güle", "teşekkürler", "teşekkür ederim",
+    "görüşürüz", "görüşmek üzere", "hoşçakalın", "hoşça kalın", "hoşçakal", "güle güle", "teşekkürler", "teşekkür ederim",
     "izlediğiniz için teşekkürler", "izlediğiniz için teşekkür ederim", "abone olmayı unutmayın",
     "altyazı mk", "altyazı m k", "bir sonraki videoda görüşmek üzere", "videoyu beğenmeyi unutmayın",
 }

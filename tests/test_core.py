@@ -238,6 +238,9 @@ def test_tts_params_and_validation():
     assert edge_params(1.2, 1.3) == ("+20%", "+15Hz")
     assert edge_params(0.8, 0.6) == ("-20%", "-20Hz")
     assert client.post("/api/tts", json={"text": ""}).status_code == 422
+    url = client.post("/api/tts", json={"text": "Merhaba"}).json()["url"]
+    assert url.startswith("/api/tts/stream/")
+    assert client.get("/api/tts/stream/olmayan").status_code == 404
 
 
 def test_hint_echo_detected():

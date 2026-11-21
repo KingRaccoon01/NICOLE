@@ -54,13 +54,17 @@ const NicoleVoice = {
           }),
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const blob = await res.blob();
+        const { url } = await res.json();
         if (my !== this.seq) return; // bu arada durduruldu ya da yeni bir okuma başladı
-        const url = URL.createObjectURL(blob);
-        this.audio = new Audio(url);
-        this.audio.addEventListener("ended", () => URL.revokeObjectURL(url));
-        this.loading = false;
-        await this.audio.play();
+        // Ses akış halinde gelir: ilk parça (~1.5 sn) gelince çalmaya başlar, kalanı çalarken iner
+        const audio = new Audio(url);
+        this.audio = audio;
+        await new Promise((resolve, reject) => {
+          audio.addEventListener("playing", resolve, { once: true });
+          audio.addEventListener("error", () => reject(new Error("ses akışı açılamadı")), { once: true });
+          audio.play().catch(reject);
+        });
+        if (my === this.seq) this.loading = false;
         return;
       } catch (err) {
         if (my !== this.seq) return;

@@ -262,12 +262,22 @@ async function startRecording() {
 
   const btn = document.getElementById("recordBtn");
   btn.classList.add("recording");
-  setRecordStatus(
-    NicoleSettings.get("dictationHold")
-      ? "Kaydediliyor... (tuşu bırakınca durur)"
-      : `Kaydediliyor... (durdurmak için tıkla veya ${keyLabel(NicoleSettings.get("dictationKey"))})`,
-    false
-  );
+  const ready = () => {
+    if (!Dictation.recording) return;
+    setRecordStatus(
+      NicoleSettings.get("dictationHold")
+        ? "🔴 Konuş — kaydediliyor (tuşu bırakınca durur)"
+        : `🔴 Konuş — kaydediliyor (durdurmak için tıkla veya ${keyLabel(NicoleSettings.get("dictationKey"))})`,
+      false
+    );
+  };
+  const warmup = micWarmupMs(Dictation.stream);
+  if (warmup) {
+    setRecordStatus("⏳ Bluetooth mikrofon hazırlanıyor… bir saniye bekle", false);
+    setTimeout(ready, warmup);
+  } else {
+    ready();
+  }
 
   Dictation.seconds = 0;
   Dictation.timerInterval = setInterval(() => {

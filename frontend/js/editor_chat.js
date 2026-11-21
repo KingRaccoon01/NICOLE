@@ -320,12 +320,22 @@ async function startChatRecording() {
   ChatMic.recording = true;
   ChatMic.starting = false;
   btn.classList.add("recording");
-  setChatMicStatus(
-    NicoleSettings.get("chatHold")
-      ? "🔴 Kaydediliyor... (tuşu bırakınca durur)"
-      : `🔴 Kaydediliyor... (durdurmak için tekrar tıkla veya ${keyLabel(NicoleSettings.get("chatKey"))})`,
-    "active"
-  );
+  const ready = () => {
+    if (!ChatMic.recording) return;
+    setChatMicStatus(
+      NicoleSettings.get("chatHold")
+        ? "🔴 Konuş — kaydediliyor (tuşu bırakınca durur)"
+        : `🔴 Konuş — kaydediliyor (durdurmak için tekrar tıkla veya ${keyLabel(NicoleSettings.get("chatKey"))})`,
+      "active"
+    );
+  };
+  const warmup = micWarmupMs(ChatMic.stream);
+  if (warmup) {
+    setChatMicStatus("⏳ Bluetooth mikrofon hazırlanıyor… bir saniye bekle", "active");
+    setTimeout(ready, warmup);
+  } else {
+    ready();
+  }
   console.log("[Nicole/ChatMic] Kayıt başladı.");
 }
 
