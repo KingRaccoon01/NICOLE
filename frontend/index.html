@@ -4,8 +4,8 @@
 <meta charset="UTF-8" />
 <title>NICOLE</title>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<link rel="stylesheet" href="css/style.css" />
-<link rel="stylesheet" href="css/settings.css" />
+<link rel="stylesheet" href="css/style.css?v=5" />
+<link rel="stylesheet" href="css/settings.css?v=5" />
 </head>
 <body class="app-shell">
 
@@ -20,7 +20,6 @@
     </span>
     <button class="btn" id="exportBtn">⬇ DOCX</button>
     <button class="btn" id="settingsBtn" title="Ayarlar">⚙ Ayarlar</button>
-    <a href="debug.html" class="btn" style="text-decoration:none; color:var(--gold);" title="Geçici debug paneli">🛠 Debug</a>
     <button class="btn btn-primary" id="projectsBtn">☰ Romanlar</button>
   </div>
 </header>
@@ -204,6 +203,9 @@
       <button class="close-btn" id="settingsCloseBtn">✕</button>
     </div>
     <div class="settings-body">
+      <div class="settings-section">Durum</div>
+      <div class="status-list" id="statusList">kontrol ediliyor…</div>
+
       <div class="settings-section">Dikte</div>
       <div class="settings-row">
         <span class="hotkey-label">Kayıt tuşu</span>
@@ -220,6 +222,12 @@
           <option value="gemini">Gemini — daha isabetli (hata olursa Ollama)</option>
         </select>
       </div>
+      <div class="settings-row" title="Whisper bu eminliğin altında yazdığı kelimelerin altını çizer ve flag taramasına bildirir">
+        <span class="hotkey-label">Emin olmama eşiği</span>
+        <input type="range" id="uncertainProbRange" min="0.2" max="0.8" step="0.05" />
+        <span id="uncertainProbValue" class="range-value"></span>
+      </div>
+      <div class="settings-hint">Çok kelimenin altı çiziliyorsa sola, yanlış duyulanlar kaçıyorsa sağa çek.</div>
 
       <div class="settings-section">Nicole Editör</div>
       <div class="settings-row">
@@ -232,16 +240,18 @@
       <label class="settings-row hotkey-hold" for="autoSendVoice">
         <input type="checkbox" id="autoSendVoice" /> Sesle konuşunca direkt gönder
       </label>
+
+      <a href="debug.html" class="settings-footer-link">🛠 Sorun giderme (Debug paneli)</a>
     </div>
   </div>
 </div>
 
-<script src="js/api.js"></script>
-<script src="js/settings.js"></script>
-<script src="js/dictation.js"></script>
-<script src="js/flags.js"></script>
-<script src="js/editor_chat.js"></script>
-<script src="js/lore.js"></script>
-<script src="js/app.js"></script>
+<script src="js/api.js?v=5"></script>
+<script src="js/settings.js?v=5"></script>
+<script src="js/dictation.js?v=5"></script>
+<script src="js/flags.js?v=5"></script>
+<script src="js/editor_chat.js?v=5"></script>
+<script src="js/lore.js?v=5"></script>
+<script src="js/app.js?v=5"></script>
 </body>
 </html>

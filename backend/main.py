@@ -5,6 +5,8 @@ Nicole — Ana uygulama giriş noktası
 import asyncio
 import logging
 
+import httpx
+
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
@@ -63,6 +65,28 @@ async def always_fresh_frontend(request, call_next):
 @app.get("/api/health")
 async def health():
     return {"status": "ok", "app": config.APP_NAME}
+
+
+@app.get("/api/status")
+async def status():
+    """Ayarlar panelindeki durum noktaları: Whisper / Ollama / Gemini hazır mı?"""
+    ollama_ok, ollama_note = False, "ulaşılamadı — Ollama açık mı?"
+    try:
+        async with httpx.AsyncClient(timeout=1.5) as client:
+            tags = (await client.get(f"{config.OLLAMA_BASE_URL}/api/tags")).json()
+        names = [m.get("name", "") for m in tags.get("models", [])]
+        ollama_ok = any(n == config.OLLAMA_MODEL or n.split(":")[0] == config.OLLAMA_MODEL for n in names)
+        ollama_note = config.OLLAMA_MODEL if ollama_ok else f"'{config.OLLAMA_MODEL}' indirilmemiş (ollama pull {config.OLLAMA_MODEL})"
+    except Exception:
+        pass
+    return {
+        "whisper": {"ok": stt_service.is_model_loaded(), "device": stt_service.current_device(),
+                    "size": config.WHISPER_MODEL_SIZE},
+        "ollama": {"ok": ollama_ok, "note": ollama_note},
+        "gemini": {"ok": bool(config.GEMINI_API_KEY), "model": config.GEMINI_MODEL},
+        "flag_engine": config.FLAG_ENGINE,
+        "uncertain_prob": stt_service.UNCERTAIN_WORD_PROB,
+    }
 
 
 # --- Frontend'i statik dosya olarak sun ---

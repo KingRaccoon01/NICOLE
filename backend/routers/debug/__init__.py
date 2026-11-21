@@ -43,6 +43,12 @@ async def recent_errors():
     return list(_recent_errors)
 
 
+@router.post("/client-error")
+async def client_error(payload: dict):
+    record_error(f"tarayıcı {payload.get('page', '')}", str(payload.get("message", ""))[:500])
+    return _result(True)
+
+
 @router.post("/clear-errors")
 async def clear_errors():
     _recent_errors.clear()

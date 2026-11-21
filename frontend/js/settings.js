@@ -18,6 +18,7 @@ const NicoleSettings = (() => {
     chatKey: "KeyN",        // Nicole Editör mikrofon tuşu
     chatHold: false,
     flagEngine: "",         // Flag taraması: "" (.env), "ollama" | "gemini"
+    uncertainProb: 0,       // Emin olmama eşiği; 0 = .env ayarı (WHISPER_UNCERTAIN_PROB)
   };
   const data = { ...DEFAULTS };
 
@@ -231,8 +232,52 @@ bindSetting("dictationHold", "dictationHold");
 bindSetting("chatHold", "chatHold");
 bindSetting("flagEngineSelect", "flagEngine");
 
-document.getElementById("settingsBtn")?.addEventListener("click", () =>
-  document.getElementById("settingsOverlay").classList.toggle("open"));
+document.getElementById("settingsBtn")?.addEventListener("click", () => {
+  const overlay = document.getElementById("settingsOverlay");
+  overlay.classList.toggle("open");
+  if (overlay.classList.contains("open")) refreshStatus();
+});
+
+// --- Durum noktaları + eşik kaydırıcısı ---
+function statusRow(ok, name, text) {
+  const row = document.createElement("div");
+  row.className = "status-item";
+  row.innerHTML = `<span class="dot ${ok ? "ok" : "bad"}"></span><b>${name}</b><span>${escapeHtml(text)}</span>`;
+  return row;
+}
+
+async function refreshStatus() {
+  const list = document.getElementById("statusList");
+  let s;
+  try {
+    s = await apiGet("/status");
+  } catch (err) {
+    list.textContent = `Sunucuya ulaşılamadı: ${err.message}`;
+    return;
+  }
+  list.innerHTML = "";
+  const w = s.whisper;
+  list.append(
+    statusRow(w.ok, "Whisper", w.ok ? `${w.size} · ${w.device === "cuda" ? "GPU" : "CPU"}` : `${w.size} · ilk kayıtta yüklenecek`),
+    statusRow(s.ollama.ok, "Ollama", s.ollama.note),
+    statusRow(s.gemini.ok, "Gemini", s.gemini.ok ? s.gemini.model : "API anahtarı yok (.env → GEMINI_API_KEY)"),
+  );
+  const range = document.getElementById("uncertainProbRange");
+  if (!NicoleSettings.get("uncertainProb")) {  // kullanıcı hiç ayarlamadıysa sunucunun değerini göster
+    range.value = s.uncertain_prob;
+    document.getElementById("uncertainProbValue").textContent = Number(s.uncertain_prob).toFixed(2);
+  }
+}
+
+(function bindUncertainRange() {
+  const range = document.getElementById("uncertainProbRange");
+  if (!range) return;
+  const label = document.getElementById("uncertainProbValue");
+  const saved = NicoleSettings.get("uncertainProb");
+  if (saved) { range.value = saved; label.textContent = Number(saved).toFixed(2); }
+  range.addEventListener("input", () => (label.textContent = Number(range.value).toFixed(2)));
+  range.addEventListener("change", () => NicoleSettings.set("uncertainProb", Number(range.value)));
+})();
 document.addEventListener("keydown", (e) => {
   // Kısayol tuşu atanırken Esc atamayı iptal eder; paneli kapatmasın
   if (e.key === "Escape" && !NicoleSettings.capturingKey) document.getElementById("settingsOverlay")?.classList.remove("open");

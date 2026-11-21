@@ -109,6 +109,20 @@ def test_frontend_files_not_served_stale():
     assert client.get("/js/settings.js").headers["cache-control"] == "no-cache"
 
 
+def test_status_and_uncertain_threshold_override():
+    s = client.get("/api/status").json()
+    assert set(s) >= {"whisper", "ollama", "gemini", "flag_engine", "uncertain_prob"}
+    W = lambda word, prob: SimpleNamespace(word=word, probability=prob)  # noqa: E731
+    segs = [SimpleNamespace(words=[W(" bir", 0.45), W(" falız", 0.2)])]
+    assert uncertain_words(segs, 0.3) == ["falız"]
+    assert uncertain_words(segs, 0.5) == ["bir", "falız"]
+
+
+def test_client_errors_are_recorded():
+    client.post("/api/debug/client-error", json={"message": "TypeError: x is undefined", "page": "/index.html"})
+    assert any("TypeError" in e["message"] for e in client.get("/api/debug/recent-errors").json())
+
+
 def test_no_cors_for_foreign_sites():
     res = client.get("/api/projects", headers={"Origin": "https://kotu-site.example"})
     assert "access-control-allow-origin" not in res.headers

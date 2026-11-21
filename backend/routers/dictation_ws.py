@@ -80,8 +80,12 @@ def _parse_control_message(raw_msg: str) -> tuple[bool, int | None]:
 
 
 @router.websocket("/ws/dictate/{chapter_id}")
-async def dictate(websocket: WebSocket, chapter_id: int, flag_engine: str | None = None):
+async def dictate(
+    websocket: WebSocket, chapter_id: int, flag_engine: str | None = None, uncertain_prob: float | None = None,
+):
     await websocket.accept()
+    if uncertain_prob is not None and not 0 < uncertain_prob < 1:
+        uncertain_prob = None  # geçersizse .env ayarı
     flag_engine = flag_engine if flag_engine in ("ollama", "gemini") else None  # None -> .env ayarı
     audio_buffer = bytearray()
 
@@ -105,6 +109,7 @@ async def dictate(websocket: WebSocket, chapter_id: int, flag_engine: str | None
                         vocabulary_hint = await _build_vocabulary_hint(chapter_id)
                         text, uncertain = await transcribe_audio_chunk(
                             bytes(audio_buffer), vocabulary_hint=vocabulary_hint, with_words=True,
+                            uncertain_prob=uncertain_prob,
                         )
                     except Exception as exc:
                         logger.exception("Transkripsiyon hatası")

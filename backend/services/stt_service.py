@@ -163,7 +163,10 @@ async def _force_reload_cpu():
     return _model
 
 
-def _run_transcribe(model, audio_bytes: bytes, vocabulary_hint: str | None = None, with_words: bool = False):
+def _run_transcribe(
+    model, audio_bytes: bytes, vocabulary_hint: str | None = None, with_words: bool = False,
+    uncertain_prob: float | None = None,
+):
     segments, _info = model.transcribe(
         io.BytesIO(audio_bytes),
         language=config.WHISPER_LANGUAGE,
@@ -178,21 +181,25 @@ def _run_transcribe(model, audio_bytes: bytes, vocabulary_hint: str | None = Non
     text = " ".join(seg.text.strip() for seg in segments).strip()
     if not with_words:
         return text
-    return text, uncertain_words(segments)
+    return text, uncertain_words(segments, uncertain_prob)
 
 
-def uncertain_words(segments) -> list[str]:
-    """Whisper'ın eminlik puanı UNCERTAIN_WORD_PROB altında kalan kelimeler (noktalama atılmış, tekrarsız)."""
+def uncertain_words(segments, threshold: float | None = None) -> list[str]:
+    """Eminlik puanı eşiğin (verilmezse UNCERTAIN_WORD_PROB) altında kalan kelimeler (noktalama atılmış, tekrarsız)."""
+    threshold = UNCERTAIN_WORD_PROB if threshold is None else threshold
     found: list[str] = []
     for seg in segments:
         for w in getattr(seg, "words", None) or []:
             word = w.word.strip(_WORD_PUNCT)
-            if word and w.probability < UNCERTAIN_WORD_PROB and word not in found:
+            if word and w.probability < threshold and word not in found:
                 found.append(word)
     return found
 
 
-async def transcribe_audio_chunk(audio_bytes: bytes, vocabulary_hint: str | None = None, with_words: bool = False):
+async def transcribe_audio_chunk(
+    audio_bytes: bytes, vocabulary_hint: str | None = None, with_words: bool = False,
+    uncertain_prob: float | None = None,
+):
     """
     Ham ses baytlarını (webm/opus veya wav) metne çevirir.
 
@@ -212,13 +219,17 @@ async def transcribe_audio_chunk(audio_bytes: bytes, vocabulary_hint: str | None
     loop = asyncio.get_event_loop()
 
     try:
-        return await loop.run_in_executor(None, _run_transcribe, model, audio_bytes, vocabulary_hint, with_words)
+        return await loop.run_in_executor(
+            None, _run_transcribe, model, audio_bytes, vocabulary_hint, with_words, uncertain_prob,
+        )
     except Exception as exc:
         global _model_device
         if _model_device == "cuda":
             logger.warning("Transcribe CUDA hatası (%s) — CPU'ya düşülüp tekrar deneniyor.", exc)
             model = await _force_reload_cpu()
-            return await loop.run_in_executor(None, _run_transcribe, model, audio_bytes, vocabulary_hint, with_words)
+            return await loop.run_in_executor(
+                None, _run_transcribe, model, audio_bytes, vocabulary_hint, with_words, uncertain_prob,
+            )
         raise
 
 

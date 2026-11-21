@@ -1,6 +1,16 @@
 // Nicole — API yardımcı katmanı
 const API_BASE = "/api";
 
+// Tarayıcıdaki JS hataları sessiz kalmasın: sunucuya bildirilir, Debug > "Son hatalar"da görünür.
+function reportClientError(message) {
+  try {
+    navigator.sendBeacon?.(`${API_BASE}/debug/client-error`,
+      new Blob([JSON.stringify({ message: String(message).slice(0, 500), page: location.pathname })], { type: "application/json" }));
+  } catch (_) { /* bildirim de başarısızsa yapacak bir şey yok */ }
+}
+window.addEventListener("error", (e) => reportClientError(`${e.message} @ ${e.filename}:${e.lineno}`));
+window.addEventListener("unhandledrejection", (e) => reportClientError(`Promise: ${e.reason && (e.reason.stack || e.reason)}`));
+
 async function apiGet(path) {
   const res = await fetch(API_BASE + path);
   if (!res.ok) throw new Error(`GET ${path} -> ${res.status}`);

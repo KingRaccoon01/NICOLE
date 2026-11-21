@@ -130,8 +130,10 @@ if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
 
 function connectDictationSocket(chapterId) {
   const protocol = location.protocol === "https:" ? "wss" : "ws";
-  const engine = NicoleSettings.get("flagEngine");
-  const query = engine ? `?flag_engine=${encodeURIComponent(engine)}` : "";
+  const params = new URLSearchParams();
+  if (NicoleSettings.get("flagEngine")) params.set("flag_engine", NicoleSettings.get("flagEngine"));
+  if (NicoleSettings.get("uncertainProb")) params.set("uncertain_prob", NicoleSettings.get("uncertainProb"));
+  const query = params.toString() ? `?${params}` : "";
   Dictation.ws = new WebSocket(`${protocol}://${location.host}/ws/dictate/${chapterId}${query}`);
 
   Dictation.ws.onopen = () => setConnStatus(true);
@@ -310,13 +312,15 @@ attachHotkey({
 });
 
 // Kısayol tuşu / mod değişince boştaki durum yazısını güncelle
-// Flag motoru soket açılırken bildirilir — ayar değişince soketi yeni ayarla yeniden aç
-document.getElementById("flagEngineSelect")?.addEventListener("change", () => {
-  if (!Dictation.ws || !NicoleState.chapterId) return;
+// Flag motoru ve eşik soket açılırken bildirilir — ayar değişince soketi yeni ayarla yeniden aç
+function reconnectDictationSocket() {
+  if (!Dictation.ws || !NicoleState.chapterId || Dictation.recording) return;
   Dictation.ws.onclose = null;
   Dictation.ws.close();
   connectDictationSocket(NicoleState.chapterId);
-});
+}
+document.getElementById("flagEngineSelect")?.addEventListener("change", reconnectDictationSocket);
+document.getElementById("uncertainProbRange")?.addEventListener("change", reconnectDictationSocket);
 
 bindKeyButton("dictationKeyBtn", "dictationKey", ["chatKey"], () => { if (!Dictation.recording) setIdleStatus(); });
 document.getElementById("dictationHold")?.addEventListener("change", () => { if (!Dictation.recording) setIdleStatus(); });
