@@ -88,6 +88,29 @@ async def _add_to_lore_if_missing(session: AsyncSession, project_id: int, term: 
         session.add(LoreEntry(project_id=project_id, term=term.strip(), source=source))
 
 
+async def _drop_auto_lore_term(session: AsyncSession, project_id: int, flag: FlaggedTerm) -> None:
+    """
+    "Orijinali kabul et" kararı değiştirilince o kararın Lore'a eklediği terimi geri al — yoksa
+    yanlış duyulmuş hal ("Kel") sözlükte kalıp Whisper'a ipucu oluyor ve sonraki önerileri bozuyordu.
+    Aynı terimi "orijinali kabul et" ile onaylamış başka bir flag varsa terim kalır.
+    """
+    key = tr_lower(flag.raw_text)
+    others = await session.execute(
+        select(FlaggedTerm.raw_text)
+        .join(Paragraph, FlaggedTerm.paragraph_id == Paragraph.id)
+        .join(Chapter, Paragraph.chapter_id == Chapter.id)
+        .where(Chapter.project_id == project_id, FlaggedTerm.status == FlagStatus.accepted_raw, FlaggedTerm.id != flag.id)
+    )
+    if any(tr_lower(t) == key for t in others.scalars()):
+        return
+    entries = await session.execute(
+        select(LoreEntry).where(LoreEntry.project_id == project_id, LoreEntry.source == LoreSource.auto)
+    )
+    for entry in entries.scalars().all():
+        if tr_lower(entry.term) == key:
+            await session.delete(entry)
+
+
 @router.get("/{flag_id}", response_model=FlaggedTermOut)
 async def get_flag(flag_id: int, session: AsyncSession = Depends(get_session)):
     flag = await session.get(FlaggedTerm, flag_id)
@@ -106,14 +129,15 @@ async def resolve_flag(flag_id: int, payload: FlagResolveRequest, session: Async
         # Kırmızı flag olduğu gibi kalır — hiçbir alan değişmez.
         return flag
 
+    project_id = await _project_id_for_paragraph(session, flag.paragraph_id)
+    if flag.status == FlagStatus.accepted_raw and payload.action != "accept_raw":
+        await _drop_auto_lore_term(session, project_id, flag)
+
     if payload.action == "reopen":
-        # Kararı geri al. Lore'a eklenmiş terim kalır (gerekirse Lore sekmesinden silinir).
         flag.status, flag.final_text, flag.resolved_at = FlagStatus.pending, None, None
         await session.commit()
         await session.refresh(flag)
         return flag
-
-    project_id = await _project_id_for_paragraph(session, flag.paragraph_id)
 
     if payload.action == "accept_raw":
         flag.status = FlagStatus.accepted_raw

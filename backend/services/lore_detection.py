@@ -286,10 +286,32 @@ def _parse_and_filter(raw: str, paragraph_text: str, known_terms: list[str], unc
     flags = [f for f in flags if isinstance(f, dict) and f.get("term") and find_term_positions(paragraph_text, f["term"])]
     # Aday listesini süz: Lore Sözlüğü'ndekiler, tekrarlar ve yaygın Türkçe kelimeler elenir.
     result = filter_flags(flags, known_terms, uncertain_words)
+    result += _uncertain_leftovers(result, paragraph_text, known_terms, uncertain_words or [])
     if len(result) != len(flags):
         logger.info("Flag filtresi: %d aday -> %d flag (yaygın kelime / bilinen terim / tekrar elendi)",
                     len(flags), len(result))
     return result
+
+
+def _uncertain_leftovers(flags: list[dict], text: str, known_terms: list[str], uncertain_words: list[str]) -> list[dict]:
+    """
+    Gerçek denemede model, Whisper'ın emin olmadığı yeni adları ("Slyvenor", "Wateron") hiç işaretlemedi.
+    Yaygın olmayan, sözlükte olmayan ve model tarafından atlanan emin-olunmayan kelimeler yine de flag'lenir;
+    öneri olarak sözlükteki en benzer terim verilir ("Kal" -> "Kael"), yoksa boş.
+    """
+    covered = " ".join(tr_lower(f["term"]) for f in flags)
+    known = {tr_lower(t): t for t in known_terms}
+    extra = []
+    for word in uncertain_words:
+        key = tr_lower(word)
+        if len(word) < 3 or key in known or key in covered or not find_term_positions(text, word):
+            continue
+        close = difflib.get_close_matches(key, list(known), n=1, cutoff=0.6)
+        if is_common_term(word) and not close:  # "kal" yaygın kelime ama "Kael"e benziyorsa yine işaretlenir
+            continue
+        extra.append({"term": word, "suggestion": known[close[0]] if close else ""})
+        covered += " " + key
+    return extra
 
 
 def find_term_positions(paragraph_text: str, term: str) -> list[tuple[int, int]]:

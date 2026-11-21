@@ -24,7 +24,7 @@ from sqlalchemy import select
 
 from .. import config
 from ..database import AsyncSessionLocal, Chapter, Paragraph, LoreEntry, next_order, touch_project
-from ..services.stt_service import transcribe_audio_chunk
+from ..services.stt_service import transcribe_audio_chunk, numbers_to_words
 from ..services.lore_detection import detect_flags, tr_lower
 from .flags import create_flags_for_paragraph
 from .debug import record_error  # GEÇİCİ — proje bitince debug.py silinince bu satır da silinmeli
@@ -121,6 +121,8 @@ async def dictate(
                         audio_buffer.clear()
                         continue
                     audio_buffer.clear()
+                    text = numbers_to_words(text)
+                    uncertain = [numbers_to_words(w) for w in uncertain]
 
                     if not text.strip():
                         await websocket.send_text(json.dumps({

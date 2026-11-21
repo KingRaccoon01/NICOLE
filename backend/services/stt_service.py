@@ -10,6 +10,7 @@ import asyncio
 import io
 import logging
 import os
+import re
 from pathlib import Path
 
 from .. import config
@@ -194,6 +195,48 @@ def uncertain_words(segments, threshold: float | None = None) -> list[str]:
             if word and w.probability < threshold and word not in found:
                 found.append(word)
     return found
+
+
+_ONES = ["", "bir", "iki", "üç", "dört", "beş", "altı", "yedi", "sekiz", "dokuz"]
+_TENS = ["", "on", "yirmi", "otuz", "kırk", "elli", "altmış", "yetmiş", "seksen", "doksan"]
+_GROUPS = [(10 ** 9, "milyar"), (10 ** 6, "milyon"), (1000, "bin")]
+
+
+def _under_thousand(n: int) -> str:
+    hundreds, rest = divmod(n, 100)
+    parts = []
+    if hundreds:
+        parts.append("yüz" if hundreds == 1 else f"{_ONES[hundreds]} yüz")
+    tens, ones = divmod(rest, 10)
+    parts += [w for w in (_TENS[tens], _ONES[ones]) if w]
+    return " ".join(parts)
+
+
+def number_to_words(n: int) -> str:
+    """42 -> 'kırk iki', 1000 -> 'bin' ('bir bin' değil), 1453 -> 'bin dört yüz elli üç'."""
+    if n == 0:
+        return "sıfır"
+    parts = []
+    for size, name in _GROUPS:
+        count, n = divmod(n, size)
+        if count:
+            parts.append(name if (count == 1 and size == 1000) else f"{number_to_words(count)} {name}")
+    if n:
+        parts.append(_under_thousand(n))
+    return " ".join(parts)
+
+
+# Tek başına duran tam sayılar (+ kesmeli ek: 42'si). Ondalık/saat/tarih (3,5 · 14.30 · 12:00) ve
+# sıfırla başlayanlar (007) olduğu gibi kalır.
+_NUMBER_RE = re.compile(r"(?<![\d.,:])([1-9]\d{0,11}|0)(?![\d]|[.,:]\d)(?:['’](\w+))?")
+
+
+def numbers_to_words(text: str) -> str:
+    """
+    Whisper sayıları rakamla yazıyor ("kırk iki atlı" -> "42 atlı"); romanda yazıyla olmalı.
+    Ek, kesme işareti atılarak birleştirilir: 42'si -> kırk ikisi, 3'ü -> üçü, 2'nci -> ikinci.
+    """
+    return _NUMBER_RE.sub(lambda m: number_to_words(int(m.group(1))) + (m.group(2) or ""), text)
 
 
 async def transcribe_audio_chunk(

@@ -196,6 +196,42 @@ def test_lore_names_not_marked_uncertain(monkeypatch):
     assert data["uncertain_words"] == ["buyunu"]
 
 
+def test_numbers_written_as_words():
+    from backend.services.stt_service import numbers_to_words as n2w
+    assert n2w("Kırk iki yerine 42 atlı geldi, yalnız 3 kelime.") == "Kırk iki yerine kırk iki atlı geldi, yalnız üç kelime."
+    assert n2w("42'si, 3'ü, 2'nci, 1000 yıl, 1453, 100 kişi") == "kırk ikisi, üçü, ikinci, bin yıl, bin dört yüz elli üç, yüz kişi"
+    assert n2w("saat 14.30, oran 3,5, ajan 007, 12:00") == "saat 14.30, oran 3,5, ajan 007, 12:00"  # dokunulmaz
+    assert n2w("2000000") == "iki milyon"
+
+
+def test_changing_accept_raw_removes_its_lore_term():
+    pid, cid = _project()
+
+    async def make_flag():
+        async with AsyncSessionLocal() as s:
+            p = Paragraph(chapter_id=cid, text="Kel sabah uyandı", order=0)
+            s.add(p)
+            await s.commit()
+            await create_flags_for_paragraph(s, p, [{"term": "Kel", "suggestion": "Kael"}])
+            await s.refresh(p, attribute_names=["flags"])
+            return p.flags[0].id
+
+    fid = asyncio.run(make_flag())
+    client.post(f"/api/flags/{fid}/resolve", json={"action": "accept_raw"})  # yanlışlıkla
+    assert [e["term"] for e in client.get(f"/api/projects/{pid}/lore").json()] == ["Kel"]
+    client.post(f"/api/flags/{fid}/resolve", json={"action": "manual", "manual_text": "Kael", "add_to_lore": True})
+    assert [e["term"] for e in client.get(f"/api/projects/{pid}/lore").json()] == ["Kael"]  # "Kel" gitti
+
+
+def test_uncertain_word_model_missed_is_still_flagged():
+    out = lore_detection._parse_and_filter(
+        '{"flags": [{"term": "öyleden", "suggestion": "öğleden"}]}',
+        "Öyleden sonra Slyvenor ormanına Kal geldi.", ["Kael"], ["Slyvenor", "Kal", "öyleden"],
+    )
+    assert out == [{"term": "öyleden", "suggestion": "öğleden"},
+                   {"term": "Slyvenor", "suggestion": ""}, {"term": "Kal", "suggestion": "Kael"}]
+
+
 def test_no_cors_for_foreign_sites():
     res = client.get("/api/projects", headers={"Origin": "https://kotu-site.example"})
     assert "access-control-allow-origin" not in res.headers
