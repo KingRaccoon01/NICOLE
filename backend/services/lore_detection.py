@@ -281,6 +281,9 @@ def _parse_and_filter(raw: str, paragraph_text: str, known_terms: list[str], unc
     for f in flags:
         if isinstance(f, dict) and f.get("term"):
             f["term"] = align_to_text(str(f["term"]).strip(), paragraph_text)
+    # Model "önceki metinden işaretleme yapma" denmesine rağmen bağlamdaki kelimeleri de dönebiliyor
+    # (denemede llama3.2:3b yaptı) — paragrafta tam kelime olarak geçmeyen her şey atılır.
+    flags = [f for f in flags if isinstance(f, dict) and f.get("term") and find_term_positions(paragraph_text, f["term"])]
     # Aday listesini süz: Lore Sözlüğü'ndekiler, tekrarlar ve yaygın Türkçe kelimeler elenir.
     result = filter_flags(flags, known_terms, uncertain_words)
     if len(result) != len(flags):

@@ -174,6 +174,28 @@ def test_daily_backup_keeps_last_seven():
     assert len(kept) == 7 and made.name in kept and "nicole-2026-01-01.db" not in kept
 
 
+def test_terms_only_from_context_are_dropped():
+    # denemede Ollama önceki paragraftaki "Vortan"ı bu paragraf için de döndürdü
+    out = lore_detection._parse_and_filter(
+        '{"flags": [{"term": "Vortan", "suggestion": "Vorthan"}, {"term": "tessizce", "suggestion": "sessizce"}]}',
+        "Elmaris kapısına doğru tessizce yürüdü.", [], [],
+    )
+    assert out == [{"term": "tessizce", "suggestion": "sessizce"}]
+
+
+def test_lore_names_not_marked_uncertain(monkeypatch):
+    from backend.routers import dictation_ws
+
+    async def no_flags(*_a, **_kw):
+        return []
+
+    monkeypatch.setattr(dictation_ws, "detect_flags", no_flags)
+    pid, cid = _project()
+    client.post(f"/api/projects/{pid}/lore", json={"term": "Kael"})
+    data = asyncio.run(dictation_ws._save_paragraph_and_scan(cid, "Kael buyunu sildi", uncertain_words=["Kael", "buyunu"]))
+    assert data["uncertain_words"] == ["buyunu"]
+
+
 def test_no_cors_for_foreign_sites():
     res = client.get("/api/projects", headers={"Origin": "https://kotu-site.example"})
     assert "access-control-allow-origin" not in res.headers

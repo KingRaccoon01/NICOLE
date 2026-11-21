@@ -25,7 +25,7 @@ from sqlalchemy import select
 from .. import config
 from ..database import AsyncSessionLocal, Chapter, Paragraph, LoreEntry, next_order, touch_project
 from ..services.stt_service import transcribe_audio_chunk
-from ..services.lore_detection import detect_flags
+from ..services.lore_detection import detect_flags, tr_lower
 from .flags import create_flags_for_paragraph
 from .debug import record_error  # GEÇİCİ — proje bitince debug.py silinince bu satır da silinmeli
 
@@ -169,6 +169,11 @@ async def _save_paragraph_and_scan(
     async with AsyncSessionLocal() as session:
         paragraph = None
         offset = 0
+        known_terms = await _lore_terms_for_chapter(session, chapter_id)
+        # Sözlükteki adlar Whisper'a ipucu olarak verildiği için doğru yazılsalar bile puanları çok
+        # düşük çıkıyor (denemede "Kael" 0.01) — sözlükte olan kelimeler "emin değil" sayılmaz.
+        known_lower = {tr_lower(t) for t in known_terms}
+        uncertain_words = [w for w in uncertain_words or [] if tr_lower(w) not in known_lower]
 
         if append_to:
             candidate = await session.get(Paragraph, append_to)
@@ -197,7 +202,6 @@ async def _save_paragraph_and_scan(
             await session.commit()
             await session.refresh(paragraph)
 
-        known_terms = await _lore_terms_for_chapter(session, chapter_id)
 
         # detect_flags'e her zaman SADECE yeni eklenen kısım (text) gönderilir —
         # zaten flag'lenmiş/çözülmüş kısımlar tekrar taranıp gereksiz yere
