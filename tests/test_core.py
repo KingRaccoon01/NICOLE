@@ -274,6 +274,13 @@ def test_fast_mode_starts_with_fast_model_and_timeout_switches(monkeypatch):
     assert r["reply"] == "cevap-yedek" and calls == ["yavas", "yedek"]  # zaman aşımı tekrar denenmedi
 
 
+def test_whisper_hallucinations_rejected():
+    from backend.services.stt_service import is_hallucination
+    assert is_hallucination("Görüşürüz.") and is_hallucination("Hoşçakalın.") and is_hallucination("İzlediğiniz için teşekkürler!")
+    assert not is_hallucination("Görüşürüz dedi ve kapıyı çarptı.")  # cümlenin parçasıysa gerçek metin
+    assert not is_hallucination("Selam Nicole, nasılsın?")
+
+
 def test_no_cors_for_foreign_sites():
     res = client.get("/api/projects", headers={"Origin": "https://kotu-site.example"})
     assert "access-control-allow-origin" not in res.headers

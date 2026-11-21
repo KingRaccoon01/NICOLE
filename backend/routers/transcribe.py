@@ -9,6 +9,10 @@ project_id verilirse, o romanın Lore Sözlüğü'ndeki terimler (ve .env'deki
 WHISPER_VOCABULARY_HINT) Whisper'a "bu kelimeler geçebilir" ipucu olarak verilir —
 özel isimler (örn. karakter adları) böylece daha doğru tanınır.
 """
+import logging
+import tempfile
+from pathlib import Path
+
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 from sqlalchemy import select
 
@@ -18,6 +22,29 @@ from ..services import stt_service
 from ..services.stt_service import transcribe_audio_chunk
 
 router = APIRouter(prefix="/api", tags=["transcribe"])
+logger = logging.getLogger("nicole.transcribe")
+
+# Teşhis: son Editör mikrofonu kaydı (her seferinde üzerine yazılır, sadece bu bilgisayarda kalır).
+LAST_AUDIO = Path(tempfile.gettempdir()) / "nicole_son_editor_kaydi.webm"
+last_info: dict = {}
+
+
+def _audio_stats(path: Path) -> dict:
+    """Süre ve ses seviyesi: kayıtta konuşma var mı, mikrofon sessiz mi?"""
+    import numpy as np
+    from faster_whisper.audio import decode_audio
+    samples = decode_audio(str(path))
+    if len(samples) == 0:
+        return {"sure_sn": 0}
+    frame = 1600  # 0.1 sn
+    levels = [float(np.sqrt(np.mean(samples[i:i + frame] ** 2))) for i in range(0, len(samples) - frame + 1, frame)] or [0.0]
+    first_loud = next((i / 10 for i, v in enumerate(levels) if v > 0.02), None)
+    return {
+        "sure_sn": round(len(samples) / 16000, 2),
+        "ortalama_seviye": round(float(np.sqrt(np.mean(samples ** 2))), 4),
+        "en_yuksek_seviye": round(max(levels), 4),
+        "ilk_ses_sn": first_loud,  # konuşmanın kaçıncı saniyede başladığı (None: hiç yüksek ses yok)
+    }
 
 
 async def _project_vocabulary_hint(project_id: int | None) -> str:
@@ -34,7 +61,9 @@ async def _project_vocabulary_hint(project_id: int | None) -> str:
 
 
 @router.post("/transcribe")
-async def transcribe_only(file: UploadFile = File(...), project_id: int | None = Form(None)):
+async def transcribe_only(
+    file: UploadFile = File(...), project_id: int | None = Form(None), device: str = Form(""),
+):
     """Ham ses dosyasını SADECE metne çevirir — kayıt/flag oluşturmaz."""
     audio_bytes = await file.read()
     if not audio_bytes:
@@ -44,7 +73,20 @@ async def transcribe_only(file: UploadFile = File(...), project_id: int | None =
         text = await transcribe_audio_chunk(audio_bytes, vocabulary_hint=hint)
     except Exception as exc:
         raise HTTPException(500, f"Ses metne çevrilemedi: {exc}")
+    try:
+        LAST_AUDIO.write_bytes(audio_bytes)
+        last_info.clear()
+        last_info.update({"cihaz": device, "metin": text, "dosya": str(LAST_AUDIO), **_audio_stats(LAST_AUDIO)})
+        logger.info("Editör mikrofonu: %s", last_info)
+    except Exception:
+        logger.exception("Teşhis bilgisi kaydedilemedi")
     return {"text": text}
+
+
+@router.get("/transcribe/last")
+async def transcribe_last():
+    """Teşhis: son Editör mikrofonu kaydının bilgileri (cihaz, süre, ses seviyesi, çıkan metin)."""
+    return last_info
 
 
 @router.get("/transcribe/status")

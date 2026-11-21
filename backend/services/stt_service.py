@@ -187,9 +187,27 @@ def _run_transcribe(
         # Whisper sesi çözemeyince ipucu listesini kopyaladı. İpucusuz bir kez daha dene.
         logger.warning("Whisper ipucu listesini tekrar etti — ipucusuz yeniden deneniyor: %r", text[:120])
         return _run_transcribe(model, audio_bytes, None, with_words, uncertain_prob)
+    if is_hallucination(text):
+        logger.warning("Whisper hayalet cümle üretti (kayıtta anlaşılır konuşma yok): %r", text)
+        text, segments = "", []
     if not with_words:
         return text
     return text, uncertain_words(segments, uncertain_prob)
+
+
+# Whisper sessizlikte/gürültüde altyazı verisinden kalan bu cümleleri uydurur ("hallucination").
+# Gerçek denemede "Selam Nicole nasılsın" kaydı -> "Görüşürüz." ve "Hoşçakalın." çıktı.
+_HALLUCINATIONS = {
+    "görüşürüz", "hoşçakalın", "hoşça kalın", "hoşçakal", "güle güle", "teşekkürler", "teşekkür ederim",
+    "izlediğiniz için teşekkürler", "izlediğiniz için teşekkür ederim", "abone olmayı unutmayın",
+    "altyazı mk", "altyazı m k", "bir sonraki videoda görüşmek üzere", "videoyu beğenmeyi unutmayın",
+}
+
+
+def is_hallucination(text: str) -> bool:
+    """Metnin TAMAMI bilinen bir hayalet cümle mi? (Uzun bir cümlenin içinde geçmesi sorun değil.)"""
+    lowered = text.replace("İ", "i").replace("I", "ı").lower()  # Python'un lower()'ı "İ"yi bozuyor
+    return " ".join(re.findall(r"\w+", lowered)) in _HALLUCINATIONS
 
 
 def looks_like_hint_echo(text: str, hint: str) -> bool:

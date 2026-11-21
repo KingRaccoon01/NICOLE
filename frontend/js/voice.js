@@ -8,6 +8,8 @@ const NicoleVoice = {
   serverVoices: [],
   defaultServerVoice: "tr-TR-EmelNeural",
   audio: null,
+  seq: 0,          // her speak/stop artırır: sunucudan geç gelen eski ses çalınmaz (üst üste binmesin)
+  loading: false,  // ses sunucudan gelirken de "konuşuyor" sayılır (düğme durdur gibi davranır)
 
   webVoices() {
     return window.speechSynthesis ? speechSynthesis.getVoices() : [];
@@ -36,10 +38,12 @@ const NicoleVoice = {
 
   async speak(text) {
     this.stop();
+    const my = this.seq;
     const clean = this.clean(text);
     if (!clean) return;
     const choice = this.choice();
     if (choice.startsWith("srv:")) {
+      this.loading = true;
       try {
         const res = await fetch("/api/tts", {
           method: "POST",
@@ -50,13 +54,19 @@ const NicoleVoice = {
           }),
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const url = URL.createObjectURL(await res.blob());
+        const blob = await res.blob();
+        if (my !== this.seq) return; // bu arada durduruldu ya da yeni bir okuma başladı
+        const url = URL.createObjectURL(blob);
         this.audio = new Audio(url);
         this.audio.addEventListener("ended", () => URL.revokeObjectURL(url));
+        this.loading = false;
         await this.audio.play();
         return;
       } catch (err) {
+        if (my !== this.seq) return;
         console.warn("[Nicole] Sunucu sesi alınamadı, tarayıcı sesine geçiliyor:", err);
+      } finally {
+        if (my === this.seq) this.loading = false;
       }
     }
     this.speakWeb(clean, choice.startsWith("web:") ? choice.slice(4) : "");
@@ -76,12 +86,14 @@ const NicoleVoice = {
   },
 
   stop() {
+    this.seq++;
+    this.loading = false;
     if (this.audio) { this.audio.pause(); this.audio = null; }
     if (window.speechSynthesis) speechSynthesis.cancel();
   },
 
   speaking() {
-    return !!((this.audio && !this.audio.paused) || (window.speechSynthesis && speechSynthesis.speaking));
+    return !!(this.loading || (this.audio && !this.audio.paused) || (window.speechSynthesis && speechSynthesis.speaking));
   },
 };
 

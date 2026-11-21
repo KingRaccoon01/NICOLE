@@ -235,7 +235,8 @@ async function startChatRecording() {
     return;
   }
   console.log("[Nicole/ChatMic] Mikrofon akışı alındı, track sayısı:", ChatMic.stream.getAudioTracks().length);
-  console.log("[Nicole/ChatMic] Kullanılan gerçek cihaz:", ChatMic.stream.getAudioTracks()[0]?.label || "(etiketsiz)");
+  ChatMic.deviceLabel = ChatMic.stream.getAudioTracks()[0]?.label || "(etiketsiz)";
+  console.log("[Nicole/ChatMic] Kullanılan gerçek cihaz:", ChatMic.deviceLabel);
 
   const preferredMime = "audio/webm;codecs=opus";
   const mimeType = MediaRecorder.isTypeSupported(preferredMime) ? preferredMime : "";
@@ -277,6 +278,7 @@ async function startChatRecording() {
       formData.append("file", blob, "chat_audio.webm");
       // Hangi romanın Lore terimlerinin Whisper'a ipucu olarak verileceğini söyler (özel isimler daha doğru tanınır)
       if (NicoleState.projectId) formData.append("project_id", NicoleState.projectId);
+      formData.append("device", ChatMic.deviceLabel || "");  // teşhis: hangi mikrofon kullanıldı
       console.log("[Nicole/ChatMic] /api/transcribe isteği gönderiliyor...");
       const res = await fetch(`${API_BASE}/transcribe`, { method: "POST", body: formData });
       console.log("[Nicole/ChatMic] Yanıt durum kodu:", res.status);
