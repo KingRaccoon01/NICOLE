@@ -236,6 +236,108 @@ def _parse_structured(text: str) -> dict:
     }
 
 
+def _build_body(message: str, story_context: str | None, history: list[dict], allow_edits: bool,
+                lore_terms: list[str] | None) -> dict:
+    contents = []
+    for h in history[-20:]:  # son 20 mesajla sınırla, token tasarrufu
+        contents.append({"role": "user" if h["role"] == "user" else "model", "parts": [{"text": h["content"]}]})
+    contents.append({"role": "user", "parts": [{"text": message}]})
+
+    # NOT: Gemini 3.x ailesinde "temperature/top_p/top_k" parametreleri artık
+    # yok sayılıyor, bu yüzden sadece geçerli olan maxOutputTokens'ı gönderiyoruz.
+    # (Düşünen modellerde "düşünme" token'ları da bu sınıra dahildir; 1024 cevabı
+    # yarıda kesebiliyordu, bu yüzden 4096.)
+    generation_config: dict = {"maxOutputTokens": 4096}
+    if allow_edits:
+        generation_config["responseMimeType"] = "application/json"
+        generation_config["responseSchema"] = _EDIT_SCHEMA
+
+    return {
+        "contents": contents,
+        "systemInstruction": {"parts": [{"text": _build_system_text(story_context, allow_edits, lore_terms)}]},
+        "generationConfig": generation_config,
+    }
+
+
+class GeminiError(Exception):
+    """Kullanıcıya gösterilecek açıklamayla birlikte Gemini hatası (akışlı sohbet)."""
+
+
+def _stream_parts(sse_line: str) -> list[str]:
+    """Akıştaki tek bir 'data: {...}' satırındaki cevap metinleri (düşünme parçaları hariç)."""
+    if not sse_line.startswith("data:"):
+        return []
+    try:
+        data = json.loads(sse_line[5:])
+        parts = data["candidates"][0]["content"]["parts"]
+    except (ValueError, KeyError, IndexError, TypeError):
+        return []
+    return [p["text"] for p in parts if p.get("text") and not p.get("thought")]
+
+
+async def chat_stream(
+    message: str,
+    story_context: str | None,
+    history: list[dict],
+    lore_terms: list[str] | None = None,
+    fast: bool = False,
+):
+    """
+    Cevabı Gemini yazdıkça parça parça verir (async generator). Böylece ekran cevabı akarak gösterir
+    ve sesli okuma ilk cümleden başlar — kalite aynı: aynı model, aynı istek, sadece beklemeden okunuyor.
+    Model seçimi/yedek kuralları chat_full ile aynı. Hiç cevap alınamazsa GeminiError fırlatır.
+    (Düzenleme izni açıkken cevap JSON olduğu için bu yol kullanılmaz; chat_full kullanılır.)
+    """
+    if not config.GEMINI_API_KEY:
+        raise GeminiError("Gemini API anahtarı tanımlı değil. .env dosyasına GEMINI_API_KEY ekleyip sunucuyu yeniden başlat.")
+    body = _build_body(message, story_context, history, False, lore_terms)
+    errors: list[tuple[str, int, str]] = []
+    for model in _model_chain(config.GEMINI_FAST_MODEL if fast else None):
+        url = _model_url(model).replace(":generateContent", ":streamGenerateContent") + "?alt=sse"
+        for attempt in range(1, _SERVER_TRIES_PER_MODEL + 1):
+            started = False
+            try:
+                async with new_client(timeout=_REQUEST_TIMEOUT_SECONDS) as client:
+                    async with client.stream("POST", url, json=body, headers={"x-goog-api-key": config.GEMINI_API_KEY}) as resp:
+                        if resp.status_code != 200:
+                            await resp.aread()
+                            resp.raise_for_status()
+                        async for line in resp.aiter_lines():
+                            for text in _stream_parts(line):
+                                started = True
+                                yield text
+                if started:
+                    if errors:
+                        logger.warning("Gemini: yedek model '%s' kullanıldı (%s).", model, errors)
+                    return
+                errors.append((model, 0, "boş cevap (güvenlik filtresi ya da token sınırı olabilir)"))
+                break
+            except httpx.HTTPStatusError as exc:
+                status, msg = _http_error_info(exc)
+                logger.error("Gemini API hatası (model=%s, HTTP %s): %s", model, status, msg)
+                if status in _SERVER_ERROR_CODES and attempt < _SERVER_TRIES_PER_MODEL:
+                    await asyncio.sleep(_RETRY_DELAY_SECONDS)
+                    continue
+                errors.append((model, status, msg))
+                break
+            except httpx.TimeoutException:
+                if started:
+                    raise GeminiError("Cevap yarıda kesildi (Google zamanında devam etmedi).")
+                logger.error("Gemini %s %.0f sn içinde cevap vermedi — yedek modele geçiliyor.", model, _REQUEST_TIMEOUT_SECONDS)
+                errors.append((model, 408, f"{_REQUEST_TIMEOUT_SECONDS:.0f} sn içinde cevap vermedi (Google tarafı yoğun)"))
+                break
+            except Exception as exc:
+                if started:
+                    raise GeminiError(f"Cevap yarıda kesildi ({type(exc).__name__}).")
+                raise GeminiError(f"Gemini API'ye ulaşılamadı ({type(exc).__name__}: {exc}). İnternet bağlantısını kontrol et.")
+        if errors and errors[-1][1] not in _SWITCH_MODEL_CODES:
+            break
+    model, status, msg = errors[0]
+    tried = ", ".join(f"{m} ({st})" for m, st, _ in errors)
+    raise GeminiError(f"Gemini API hatası (HTTP {status}): {msg} — Google tarafı yoğun olabilir; "
+                      f"Ayarlar > Model > Hızlı'yı dene. Denenen modeller: {tried}.")
+
+
 async def chat_full(
     message: str,
     story_context: str | None,
@@ -262,25 +364,7 @@ async def chat_full(
             ),
         }
 
-    contents = []
-    for h in history[-20:]:  # son 20 mesajla sınırla, token tasarrufu
-        contents.append({"role": "user" if h["role"] == "user" else "model", "parts": [{"text": h["content"]}]})
-    contents.append({"role": "user", "parts": [{"text": message}]})
-
-    # NOT: Gemini 3.x ailesinde "temperature/top_p/top_k" parametreleri artık
-    # yok sayılıyor, bu yüzden sadece geçerli olan maxOutputTokens'ı gönderiyoruz.
-    # (Düşünen modellerde "düşünme" token'ları da bu sınıra dahildir; 1024 cevabı
-    # yarıda kesebiliyordu, bu yüzden 4096.)
-    generation_config: dict = {"maxOutputTokens": 4096}
-    if allow_edits:
-        generation_config["responseMimeType"] = "application/json"
-        generation_config["responseSchema"] = _EDIT_SCHEMA
-
-    body = {
-        "contents": contents,
-        "systemInstruction": {"parts": [{"text": _build_system_text(story_context, allow_edits, lore_terms)}]},
-        "generationConfig": generation_config,
-    }
+    body = _build_body(message, story_context, history, allow_edits, lore_terms)
 
     def fail(text: str) -> dict:
         return {"ok": False, "edits": [], "reply": text}

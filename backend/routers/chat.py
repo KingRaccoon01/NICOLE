@@ -5,12 +5,13 @@ import json
 import logging
 
 from fastapi import APIRouter, Depends
+from fastapi.responses import StreamingResponse
 from sqlalchemy import select, update, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from ..database import (
-    get_session, ChatMessage, Chapter, Paragraph, FlaggedTerm, FlagStatus, LoreEntry, EditLog, touch_project,
+    AsyncSessionLocal, get_session, ChatMessage, Chapter, Paragraph, FlaggedTerm, FlagStatus, LoreEntry, EditLog, touch_project,
 )
 from ..schemas import ChatMessageIn, ChatMessageOut, EditOut
 from ..services import gemini_service
@@ -198,8 +199,8 @@ async def clear_history(project_id: int, session: AsyncSession = Depends(get_ses
     return {"ok": True, "deleted": len(messages)}
 
 
-@router.post("", response_model=ChatMessageOut)
-async def send_message(project_id: int, payload: ChatMessageIn, session: AsyncSession = Depends(get_session)):
+async def _prepare_turn(session: AsyncSession, project_id: int, payload: ChatMessageIn):
+    """Ortak hazırlık: geçmiş, kullanıcı mesajının kaydı, hikâye bağlamı, lore terimleri."""
     # Geçmişi mesajı kaydetmeden ÖNCE al — yoksa geçerli mesaj hem geçmişte hem
     # ayrıca eklenerek Gemini'ye iki kez gidiyordu.
     history = await _load_history(session, project_id)
@@ -216,6 +217,57 @@ async def send_message(project_id: int, payload: ChatMessageIn, session: AsyncSe
         select(LoreEntry.term).where(LoreEntry.project_id == project_id).order_by(LoreEntry.term)
     )
     lore_terms = [row[0] for row in lore_result.all()]
+    return history, user_msg, context, lore_terms
+
+
+@router.post("/stream")
+async def send_message_stream(project_id: int, payload: ChatMessageIn):
+    """
+    Düzenleme izni KAPALIYKEN kullanılan akışlı sohbet: her satır bir JSON (NDJSON).
+      {"delta": "..."}                      — Gemini yazdıkça gelen metin parçası
+      {"done": true, "message": {...}}      — son: kaydedilmiş mesaj (hata ise id=0 ve "⚠ ..." metni)
+    Ekran cevabı akarak gösterir, sesli okuma ilk cümleden başlar.
+    """
+    async def events():
+        async with AsyncSessionLocal() as session:  # istek bitince kapanan Depends oturumu akışta kullanılamaz
+            history, user_msg, context, lore_terms = await _prepare_turn(session, project_id, payload)
+            parts: list[str] = []
+            error = None
+            try:
+                async for delta in gemini_service.chat_stream(
+                    payload.content, context, history, lore_terms=lore_terms, fast=payload.fast,
+                ):
+                    parts.append(delta)
+                    yield json.dumps({"delta": delta}, ensure_ascii=False) + "\n"
+            except gemini_service.GeminiError as exc:
+                error = str(exc)
+            except Exception as exc:
+                logger.exception("Akışlı sohbet hatası")
+                error = f"Beklenmeyen hata: {type(exc).__name__}: {exc}"
+
+            reply = "".join(parts).strip()
+            if not reply:
+                # send_message ile aynı kural: hata geçmişe yazılmaz, kullanıcı mesajı da silinir
+                await session.delete(user_msg)
+                await session.commit()
+                out = ChatMessageOut(id=0, role="assistant", content=f"⚠ {error or 'Gemini boş yanıt döndürdü.'}",
+                                     created_at=dt.datetime.utcnow())
+            else:
+                if error:
+                    reply += f"\n\n⚠ {error}"
+                msg = ChatMessage(project_id=project_id, role="assistant", content=reply)
+                session.add(msg)
+                await session.commit()
+                await session.refresh(msg)
+                out = ChatMessageOut(id=msg.id, role="assistant", content=msg.content, created_at=msg.created_at)
+            yield json.dumps({"done": True, "message": out.model_dump(mode="json")}, ensure_ascii=False) + "\n"
+
+    return StreamingResponse(events(), media_type="application/x-ndjson")
+
+
+@router.post("", response_model=ChatMessageOut)
+async def send_message(project_id: int, payload: ChatMessageIn, session: AsyncSession = Depends(get_session)):
+    history, user_msg, context, lore_terms = await _prepare_turn(session, project_id, payload)
 
     result = await gemini_service.chat_full(
         payload.content, context, history, allow_edits=payload.allow_edits, lore_terms=lore_terms,

@@ -112,6 +112,59 @@ function renderChatMessage(msg, opts = {}) {
   return bubble;
 }
 
+// Akışlı cevap: NDJSON satırları ({"delta"} ... {"done", "message"}). Baloncuk akarak dolar, ses cümle cümle okunur.
+async function streamChatReply(body, thinking) {
+  const res = await fetch(`${API_BASE}/projects/${NicoleState.projectId}/chat/stream`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok || !res.body) throw new Error(`POST /chat/stream -> ${res.status}`);
+
+  const speak = NicoleSettings.get("ttsEnabled");
+  const live = { role: "assistant", content: "" };  // 🔊 düğmesi bu nesneyi okur; sonda kesin metinle güncellenir
+  let bubble = null;
+  let final = null;
+  if (speak) NicoleVoice.begin();
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    let nl;
+    while ((nl = buffer.indexOf("\n")) >= 0) {
+      const line = buffer.slice(0, nl).trim();
+      buffer = buffer.slice(nl + 1);
+      if (!line) continue;
+      const event = JSON.parse(line);
+      if (event.delta) {
+        if (!bubble) { thinking.remove(); bubble = renderChatMessage(live); }
+        live.content += event.delta;
+        bubble.firstChild.textContent = live.content;
+        document.getElementById("chatMessages").scrollTop = 1e9;
+        if (speak) NicoleVoice.feed(event.delta);
+      } else if (event.done) {
+        final = event.message;
+      }
+    }
+  }
+  if (!final) throw new Error("cevap yarıda kesildi");
+  thinking.remove();
+  if (final.id === 0) {
+    if (speak) NicoleVoice.stop();
+    bubble?.remove();
+    renderChatMessage(final);
+  } else {
+    live.content = final.content;
+    if (bubble) bubble.firstChild.textContent = final.content; else renderChatMessage(live);
+    if (speak) NicoleVoice.end();
+  }
+  return final;
+}
+
 async function sendChatMessage() {
   const input = document.getElementById("chatInput");
   const text = input.value.trim();
@@ -128,12 +181,20 @@ async function sendChatMessage() {
 
   ChatState.sending = true;
   try {
-    const reply = await apiPost(`/projects/${NicoleState.projectId}/chat`, {
+    const body = {
       content: text,
       include_context: includeContext,
       allow_edits: allowEdits,
       fast: NicoleSettings.get("editorSpeed") === "fast",
-    });
+    };
+    // Düzenleme izni kapalıyken cevap akarak gelir ve sesli okuma ilk cümleden başlar.
+    // (Açıkken cevap JSON + düzenlemeler olduğu için tek parça gelir.)
+    if (!allowEdits) {
+      const reply = await streamChatReply(body, thinking);
+      if (reply.id === 0 && !input.value) input.value = text; // hata: mesaj kaydedilmedi, tekrar denemek için geri koy
+      return;
+    }
+    const reply = await apiPost(`/projects/${NicoleState.projectId}/chat`, body);
     thinking.remove();
     renderChatMessage(reply);
     if (reply.id !== 0 && NicoleSettings.get("ttsEnabled")) NicoleVoice.speak(reply.content);

@@ -1,4 +1,4 @@
-// Nicole — Editör cevaplarını sesli okuma.
+// Nicole — Editör cevaplarını sesli okuma. Cevap Gemini yazdıkça cümle cümle okunur (beklemeden).
 // 1) Sunucu sesi (☁): Nicole'nin sunucusu Microsoft'un doğal seslerinden mp3 üretir (Emel vb.) —
 //    tarayıcıdan bağımsızdır, Brave/Chrome'da da çalışır; internet ister.
 // 2) Tarayıcı sesi (💻): internet yoksa ya da sunucu sesi alınamazsa tarayıcının kendi sesi (ör. Tolga).
@@ -7,9 +7,13 @@
 const NicoleVoice = {
   serverVoices: [],
   defaultServerVoice: "tr-TR-EmelNeural",
-  audio: null,
-  seq: 0,          // her speak/stop artırır: sunucudan geç gelen eski ses çalınmaz (üst üste binmesin)
-  loading: false,  // ses sunucudan gelirken de "konuşuyor" sayılır (düğme durdur gibi davranır)
+  audio: null,       // şu an çalan parça
+  seq: 0,            // her stop/yeni okuma artırır: eski okumanın gecikmiş parçaları çalınmaz (üst üste binmesin)
+  queue: [],         // sıradaki parçalar: Promise<{url} | {text}> (text = tarayıcı sesiyle okunacak)
+  pending: "",       // akıştan gelen, henüz cümlesi tamamlanmamış metin
+  firstSent: false,
+  playing: false,
+  preloaded: null,   // bir sonraki parçanın önceden yüklenen sesi (parçalar arası boşluk olmasın)
 
   webVoices() {
     return window.speechSynthesis ? speechSynthesis.getVoices() : [];
@@ -36,68 +40,120 @@ const NicoleVoice = {
       .trim();
   },
 
-  async speak(text) {
+  // --- Okuma: hazır metin (speak) ya da Gemini yazdıkça gelen metin (begin → feed... → end) ---
+  speak(text) {
+    this.begin();
+    this.feed(text);
+    this.end();
+  },
+
+  begin() {
     this.stop();
-    const my = this.seq;
+    this.pending = "";
+    this.firstSent = false;
+  },
+
+  // İlk tam cümle hemen okunur (hızlı başlangıç); sonrakiler ~150 harf birikince (daha az istek, doğal tonlama)
+  feed(delta) {
+    this.pending += delta;
+    const m = this.pending.match(/^[\s\S]*[.!?…](?=\s)/);
+    if (!m || (this.firstSent && m[0].length < 150)) return;
+    this.enqueue(m[0]);
+    this.pending = this.pending.slice(m[0].length);
+    this.firstSent = true;
+  },
+
+  end() {
+    if (this.pending.trim()) this.enqueue(this.pending);
+    this.pending = "";
+  },
+
+  enqueue(text) {
     const clean = this.clean(text);
     if (!clean) return;
     const choice = this.choice();
-    if (choice.startsWith("srv:")) {
-      this.loading = true;
-      try {
-        const res = await fetch("/api/tts", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            text: clean, voice: choice.slice(4),
-            rate: NicoleSettings.get("ttsRate") || 1, pitch: NicoleSettings.get("ttsPitch") || 1,
-          }),
-        });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const { url } = await res.json();
-        if (my !== this.seq) return; // bu arada durduruldu ya da yeni bir okuma başladı
-        // Ses akış halinde gelir: ilk parça (~1.5 sn) gelince çalmaya başlar, kalanı çalarken iner
-        const audio = new Audio(url);
-        this.audio = audio;
-        await new Promise((resolve, reject) => {
-          audio.addEventListener("playing", resolve, { once: true });
-          audio.addEventListener("error", () => reject(new Error("ses akışı açılamadı")), { once: true });
-          audio.play().catch(reject);
-        });
-        if (my === this.seq) this.loading = false;
-        return;
-      } catch (err) {
-        if (my !== this.seq) return;
-        console.warn("[Nicole] Sunucu sesi alınamadı, tarayıcı sesine geçiliyor:", err);
-      } finally {
-        if (my === this.seq) this.loading = false;
-      }
-    }
-    this.speakWeb(clean, choice.startsWith("web:") ? choice.slice(4) : "");
+    const item = choice.startsWith("srv:")
+      ? this.prepareServer(clean, choice.slice(4)).catch((err) => {
+          console.warn("[Nicole] Sunucu sesi alınamadı, tarayıcı sesine geçiliyor:", err);
+          return { text: clean };
+        })
+      : Promise.resolve({ text: clean, voice: choice.slice(4) });
+    this.queue.push(item);
+    if (!this.playing) this.playNext(this.seq);
   },
 
-  // Tarayıcı sesi: cümle cümle (bazı sesler uzun metinde ~15 sn sonra kesiliyor)
-  speakWeb(text, name) {
-    if (!window.speechSynthesis) return;
-    const voice = this.bestWebVoice(name);
-    for (const part of text.match(/[^.!?…]+[.!?…]*\s*/g) || []) {
-      const u = new SpeechSynthesisUtterance(part);
-      if (voice) { u.voice = voice; u.lang = voice.lang; } else { u.lang = "tr-TR"; }
-      u.rate = NicoleSettings.get("ttsRate") || 1;
-      u.pitch = NicoleSettings.get("ttsPitch") || 1;
-      speechSynthesis.speak(u);
+  async prepareServer(text, voice) {
+    const res = await fetch("/api/tts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text, voice, rate: NicoleSettings.get("ttsRate") || 1, pitch: NicoleSettings.get("ttsPitch") || 1 }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return { url: (await res.json()).url };
+  },
+
+  async playNext(my) {
+    if (my !== this.seq) return;
+    const item = this.queue.shift();
+    if (!item) { this.playing = false; this.audio = null; return; }
+    this.playing = true;
+    const got = await item;
+    if (my !== this.seq) return;
+    if (got.text) {
+      await this.speakWeb(got.text, got.voice || "");
+      return this.playNext(my);
     }
+    const audio = this.preloaded && this.preloaded.item === item ? this.preloaded.audio : new Audio(got.url);
+    this.preloaded = null;
+    this.audio = audio;
+    const next = () => this.playNext(my);
+    audio.addEventListener("ended", next, { once: true });
+    audio.addEventListener("error", next, { once: true });
+    audio.addEventListener("playing", () => this.preloadNext(my), { once: true });
+    audio.play().catch(next);
+  },
+
+  // Çalan parça başlayınca bir sonrakini indirmeye başla
+  async preloadNext(my) {
+    const item = this.queue[0];
+    if (!item) return;
+    const got = await item;
+    if (my !== this.seq || !got.url || this.queue[0] !== item) return;
+    const audio = new Audio(got.url);
+    audio.preload = "auto";
+    this.preloaded = { item, audio };
+  },
+
+  // Tarayıcı sesi: cümle cümle (bazı sesler uzun metinde ~15 sn sonra kesiliyor); bitince çözülür
+  speakWeb(text, name) {
+    return new Promise((resolve) => {
+      if (!window.speechSynthesis) return resolve();
+      const voice = this.bestWebVoice(name);
+      const parts = text.match(/[^.!?…]+[.!?…]*\s*/g) || [];
+      if (!parts.length) return resolve();
+      parts.forEach((part, i) => {
+        const u = new SpeechSynthesisUtterance(part);
+        if (voice) { u.voice = voice; u.lang = voice.lang; } else { u.lang = "tr-TR"; }
+        u.rate = NicoleSettings.get("ttsRate") || 1;
+        u.pitch = NicoleSettings.get("ttsPitch") || 1;
+        if (i === parts.length - 1) { u.onend = resolve; u.onerror = resolve; }
+        speechSynthesis.speak(u);
+      });
+    });
   },
 
   stop() {
     this.seq++;
-    this.loading = false;
+    this.queue = [];
+    this.pending = "";
+    this.playing = false;
+    this.preloaded = null;
     if (this.audio) { this.audio.pause(); this.audio = null; }
     if (window.speechSynthesis) speechSynthesis.cancel();
   },
 
   speaking() {
-    return !!(this.loading || (this.audio && !this.audio.paused) || (window.speechSynthesis && speechSynthesis.speaking));
+    return !!(this.playing || (this.audio && !this.audio.paused) || (window.speechSynthesis && speechSynthesis.speaking));
   },
 };
 

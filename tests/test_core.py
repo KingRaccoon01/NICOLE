@@ -284,6 +284,38 @@ def test_whisper_hallucinations_rejected():
     assert not is_hallucination("Selam Nicole, nasılsın?")
 
 
+def test_chat_stream_ndjson_and_error_path(monkeypatch):
+    import json
+    from backend.services import gemini_service as g
+
+    async def fake_stream(*_a, **_kw):
+        for part in ["Selam. ", "Bence sahne ", "güçlü."]:
+            yield part
+
+    monkeypatch.setattr(g, "chat_stream", fake_stream)
+    pid, _ = _project()
+    lines = [json.loads(l) for l in client.post(f"/api/projects/{pid}/chat/stream", json={"content": "merhaba"}).text.splitlines()]
+    assert [l["delta"] for l in lines[:-1]] == ["Selam. ", "Bence sahne ", "güçlü."]
+    assert lines[-1]["done"] and lines[-1]["message"]["content"] == "Selam. Bence sahne güçlü."
+    assert [m["role"] for m in client.get(f"/api/projects/{pid}/chat").json()] == ["user", "assistant"]
+
+    async def failing(*_a, **_kw):
+        raise g.GeminiError("Google yoğun")
+        yield  # noqa: async generator
+
+    monkeypatch.setattr(g, "chat_stream", failing)
+    last = json.loads(client.post(f"/api/projects/{pid}/chat/stream", json={"content": "tekrar"}).text.splitlines()[-1])
+    assert last["message"]["id"] == 0 and "Google yoğun" in last["message"]["content"]
+    assert len(client.get(f"/api/projects/{pid}/chat").json()) == 2  # hata ve cevapsız mesaj geçmişe girmedi
+
+
+def test_stream_sse_parts():
+    from backend.services.gemini_service import _stream_parts
+    line = 'data: {"candidates":[{"content":{"parts":[{"text":"düşünce","thought":true},{"text":"Cevap"}]}}]}'
+    assert _stream_parts(line) == ["Cevap"]
+    assert _stream_parts("") == [] and _stream_parts("data: bozuk") == []
+
+
 def test_no_cors_for_foreign_sites():
     res = client.get("/api/projects", headers={"Origin": "https://kotu-site.example"})
     assert "access-control-allow-origin" not in res.headers
