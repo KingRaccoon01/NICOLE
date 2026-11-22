@@ -76,11 +76,18 @@ class _Job:
         import edge_tts
         rate, pitch = edge_params(payload.rate, payload.pitch)
         try:
-            async for chunk in edge_tts.Communicate(payload.text, payload.voice, rate=rate, pitch=pitch).stream():
-                if chunk["type"] == "audio":
-                    async with self.cond:
-                        self.chunks.append(chunk["data"])
-                        self.cond.notify_all()
+            for attempt in range(3):  # Microsoft ara sıra (çoğu zaman ilk istekte) hiç ses göndermiyor; tekrarı çalışıyor
+                try:
+                    async for chunk in edge_tts.Communicate(payload.text, payload.voice, rate=rate, pitch=pitch).stream():
+                        if chunk["type"] == "audio":
+                            async with self.cond:
+                                self.chunks.append(chunk["data"])
+                                self.cond.notify_all()
+                    break
+                except edge_tts.exceptions.NoAudioReceived:
+                    if self.chunks or attempt == 2:  # ses başladıysa tekrar deneme: cümle iki kez okunurdu
+                        raise
+                    logger.info("Sunucu ses göndermedi, tekrar deneniyor (%d)", attempt + 1)
         except Exception as exc:
             self.error = exc
             logger.warning("Sesli okuma başarısız (%s: %s)", type(exc).__name__, exc)

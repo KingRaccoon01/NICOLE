@@ -80,6 +80,8 @@ $venvPy = Join-Path $PSScriptRoot "venv\Scripts\python.exe"
 & $venvPy -m pip install --upgrade pip --quiet --disable-pip-version-check
 & $venvPy -m pip install -r requirements.txt --quiet --disable-pip-version-check
 if ($LASTEXITCODE -ne 0) { Hata "Paketler kurulamadı (internet bağlantısını kontrol et)." }
+& $venvPy -c "import faster_whisper, edge_tts"
+if ($LASTEXITCODE -ne 0) { Hata "Paketler eksik kuruldu (yukarıdaki hata mesajına bak)." }
 Tamam "Paketler kuruldu"
 
 # ---------------------------------------------------------------- 4) NVIDIA ekran kartı

@@ -558,3 +558,23 @@ def test_old_shared_lore_migrates_to_every_novel():
     assert (path.parent / "eski.db.bak-lore-per-project").exists()  # geçiş öncesi yedek alındı
     rows = sqlite3.connect(path).execute("SELECT project_id, term, definition FROM lore_entries ORDER BY project_id, term").fetchall()
     assert rows == [(1, "Gaara", None), (1, "Rasengan", "bir teknik"), (2, "Gaara", None), (2, "Rasengan", "bir teknik")]
+
+
+def test_tts_retries_when_microsoft_sends_no_audio(monkeypatch):
+    import edge_tts
+    calls = []
+
+    class FakeCommunicate:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def stream(self):
+            calls.append(1)
+            if len(calls) == 1:  # Microsoft ara sıra ilk istekte boş döner
+                raise edge_tts.exceptions.NoAudioReceived("No audio was received.")
+            yield {"type": "audio", "data": b"mp3"}
+
+    monkeypatch.setattr(edge_tts, "Communicate", FakeCommunicate)
+    url = client.post("/api/tts", json={"text": "Merhaba"}).json()["url"]
+    res = client.get(url)
+    assert res.status_code == 200 and res.content == b"mp3" and len(calls) == 2
