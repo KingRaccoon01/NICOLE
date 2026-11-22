@@ -139,6 +139,13 @@ Nicole her açılışta (günde bir kez) romanlarının yedeğini `yedekler/` kl
 saklar. Bir şey ters giderse: Nicole'yi kapat, `nicole.db` dosyasını bir kenara al ve istediğin
 yedeği `nicole.db` adıyla proje klasörüne kopyala.
 
+### Kaldırma
+
+**`Kaldir.bat`** dosyasına çift tıkla. Masaüstü kısayolunu siler, sonra her grubu ayrı sorar:
+kütüphaneler (Python paketleri, Whisper ve llama3.2 modelleri), Python 3.11 ve Ollama programları,
+en son da romanlar (`nicole.db`, `yedekler/`) ve `.env`. Romanlar sadece büyük harfle `SIL` yazılırsa silinir.
+Bitince Nicole klasörünü elle silebilirsin.
+
 ## 8. Testler
 
 ```bash
